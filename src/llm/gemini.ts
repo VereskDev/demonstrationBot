@@ -205,8 +205,8 @@ export class GeminiModelTransport implements ModelTransport {
       const code = Number((settled.err as { statusCode?: number })?.statusCode ?? 0);
       if (settled.i === 0 && (code === 429 || code === 503)) primaryUnhealthyUntil = Date.now() + UNHEALTHY_MS;
       log.warn("llm", `${chain[settled.i]} упала: ${code} ${String((settled.err as Error)?.message ?? settled.err).slice(0, 100)}`);
-      // 400 — ошибка в запросе (не в нагрузке): другая модель ответит тем же, не маскируем.
-      if (code === 400 && !live.size) throw settled.err;
+      // И на 400 пробуем следующую модель: у неё другой generationConfig (lite без thinking),
+      // а пользователю ответ нужнее, чем точная причина. Все упали — наружу уйдёт последняя ошибка.
       if (next < chain.length) {
         launch();
         continue;

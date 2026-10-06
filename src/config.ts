@@ -42,7 +42,7 @@ export const config = {
   /** Уровень «думания» основной модели: low | high | none. */
   geminiThinking: str("GEMINI_THINKING_LEVEL", "low"),
   /** Через сколько мс без ответа основной модели запускаем дубль на быстрой. 0 — не хеджировать. */
-  geminiHedgeMs: num("GEMINI_HEDGE_MS", 5000),
+  geminiHedgeMs: num("GEMINI_HEDGE_MS", 3500),
   cfAccountId: str("CF_ACCOUNT_ID"),
   cfApiToken: str("CF_API_TOKEN"),
   imageModel: str("IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell"),
