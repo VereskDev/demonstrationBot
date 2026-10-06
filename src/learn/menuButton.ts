@@ -3,6 +3,7 @@
  * колодой к повторению. URL кнопки обновляется, когда колода меняется — Telegram хранит кнопку
  * на стороне чата, и бот её просто перезаписывает (setChatMenuButton).
  */
+import { getPublicApiUrl } from "../api/state.ts";
 import { config } from "../config.ts";
 import { log, errMsg } from "../runtime/log.ts";
 import type { TelegramApi } from "../telegram/api.ts";
@@ -16,13 +17,26 @@ const lastSignature = new Map<string, string>();
 export async function refreshMenuButton(tg: TelegramApi, chatId: string, botUsername: string, force = false): Promise<void> {
   if (!config.webappUrl || !botUsername) return;
   try {
+    const api = getPublicApiUrl();
     const due = dueCards(chatId, Date.now(), APP_DECK_LIMIT);
-    const sig = due.map((c) => `${c.id}:${c.box}`).join(",");
+    const base = config.webappUrl.replace(/\/?$/, "/");
+    let url: string;
+    let text: string;
+    let sig: string;
+    if (api) {
+      // Полное приложение: данные берёт из API, колода в URL не нужна.
+      sig = `api:${api}`;
+      url = `${base}#api=${encodeURIComponent(api)}&u=${botUsername}`;
+      text = "📱 Приложение";
+    } else {
+      // Без туннеля — старый режим: только карточки, колода зашита в URL.
+      sig = due.map((c) => `${c.id}:${c.box}`).join(",");
+      const s = getLearnSettings(chatId);
+      const deckId = due.length ? createAppDeck(chatId, due.map((c) => c.id)) : undefined;
+      url = `${base}#d=${encodeDeck(due, s.lang, { deckId, bot: botUsername, menu: true })}`;
+      text = due.length ? `🃏 Карточки (${due.length})` : "🃏 Карточки";
+    }
     if (!force && lastSignature.get(chatId) === sig) return;
-    const s = getLearnSettings(chatId);
-    const deckId = due.length ? createAppDeck(chatId, due.map((c) => c.id)) : undefined;
-    const url = `${config.webappUrl.replace(/\/?$/, "/")}#d=${encodeDeck(due, s.lang, { deckId, bot: botUsername, menu: true })}`;
-    const text = due.length ? `🃏 Карточки (${due.length})` : "🃏 Карточки";
     const res = await tg.call("setChatMenuButton", { chat_id: Number(chatId), menu_button: { type: "web_app", text, web_app: { url } } });
     if (!res.ok) {
       log.warn("menu", `setChatMenuButton: ${res.error_code} ${res.description} (url ${url.length} зн.)`);

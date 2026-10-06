@@ -17,6 +17,7 @@
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "@viz-js/viz": "^3.31.0",
+    "cloudflared": "^0.7.3",
     "luxon": "^3.7.2"
   },
   "devDependencies": {

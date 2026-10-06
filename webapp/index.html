@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<title>Карточки</title>
+<title>Помощник</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
@@ -11,24 +11,80 @@
     --fg: var(--tg-theme-text-color, #111);
     --hint: var(--tg-theme-hint-color, #777);
     --card: var(--tg-theme-secondary-bg-color, #fff);
+    --sec: var(--tg-theme-section-bg-color, var(--tg-theme-secondary-bg-color, #fff));
     --accent: var(--tg-theme-button-color, #3390ec);
     --accent-fg: var(--tg-theme-button-text-color, #fff);
-    --ok: #2ea043;
-    --no: #d9534f;
+    --link: var(--tg-theme-link-color, #3390ec);
+    --ok: #2ea043; --no: #d9534f; --warn: #d9822b;
+    --radius: 14px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 17px/1.4 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; overflow: hidden; }
-  #app { height: 100%; display: flex; flex-direction: column; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--fg); font: 16px/1.4 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; }
+  body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 16px 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  header .sub { font-size: 13px; color: var(--hint); }
+  main { padding: 0 16px 16px; }
+  .section { background: var(--sec); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
+  .section h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--hint); font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(127,127,127,.15); }
+  .row:last-child { border-bottom: 0; }
+  .row .grow { flex: 1; min-width: 0; }
+  .row .title { font-size: 16px; overflow-wrap: anywhere; }
+  .row .meta { font-size: 13px; color: var(--hint); margin-top: 2px; }
+  .row .done .title { text-decoration: line-through; color: var(--hint); }
+  .chk { width: 26px; height: 26px; border-radius: 8px; border: 2px solid var(--hint); display: inline-flex; align-items: center; justify-content: center; flex: none; font-size: 16px; }
+  .chk.on { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .pill { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(127,127,127,.15); color: var(--hint); margin-right: 4px; }
+  .pill.warn { background: rgba(217,130,43,.18); color: var(--warn); }
+  .btn { border: 0; border-radius: 12px; padding: 12px 14px; font-size: 16px; font-weight: 600; background: var(--accent); color: var(--accent-fg); width: 100%; }
+  .btn.sm { width: auto; padding: 8px 12px; font-size: 14px; font-weight: 500; }
+  .btn.ghost { background: rgba(127,127,127,.14); color: var(--fg); }
+  .btn.ok { background: var(--ok); color: #fff; } .btn.no { background: var(--no); color: #fff; }
+  .btn:disabled { opacity: .5; }
+  .btn:active { filter: brightness(.92); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid2 .btn { padding: 14px 10px; }
+  .tile { background: var(--sec); border-radius: var(--radius); padding: 14px; text-align: left; border: 0; color: var(--fg); font-size: 15px; }
+  .tile b { display: block; font-size: 17px; margin-bottom: 2px; }
+  .tile span { color: var(--hint); font-size: 13px; }
+  .stats { display: flex; gap: 10px; }
+  .stat { flex: 1; background: var(--sec); border-radius: var(--radius); padding: 12px; text-align: center; }
+  .stat b { display: block; font-size: 26px; } .stat span { font-size: 12px; color: var(--hint); }
+  input, textarea, select { width: 100%; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid rgba(127,127,127,.3); border-radius: 10px; padding: 10px 12px; margin: 6px 0; }
+  textarea { min-height: 90px; resize: vertical; }
+  label { font-size: 13px; color: var(--hint); }
+  .actions { display: flex; gap: 10px; margin-top: 8px; }
+  .fab { position: fixed; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); width: 54px; height: 54px; border-radius: 27px; border: 0; background: var(--accent); color: var(--accent-fg); font-size: 30px; line-height: 54px; box-shadow: 0 8px 24px rgba(0,0,0,.25); z-index: 6; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; background: var(--sec); border-top: 1px solid rgba(127,127,127,.2); padding-bottom: env(safe-area-inset-bottom); z-index: 7; }
+  nav button { flex: 1; border: 0; background: transparent; color: var(--hint); padding: 8px 0 6px; font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  nav button i { font-style: normal; font-size: 22px; }
+  nav button.on { color: var(--accent); }
+  .empty { text-align: center; color: var(--hint); padding: 28px 12px; }
+  .toast { position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: rgba(0,0,0,.8); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 9; max-width: 90vw; text-align: center; }
+  .back { background: transparent; border: 0; color: var(--link); font-size: 16px; padding: 0; }
+  .search { margin-bottom: 10px; }
+  .daynav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .daynav b { font-size: 17px; }
+  .daynav button { background: rgba(127,127,127,.14); border: 0; border-radius: 10px; padding: 8px 12px; color: var(--fg); font-size: 16px; }
+  .table { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; white-space: pre; overflow: auto; background: var(--bg); border-radius: 10px; padding: 8px 10px; }
+  .hist div { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,.15); font-size: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+  .chip { border: 1px solid rgba(127,127,127,.3); background: transparent; color: var(--fg); border-radius: 20px; padding: 7px 12px; font-size: 14px; }
+  .chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+  /* тренажёр */
+  .trainer { display: flex; flex-direction: column; min-height: calc(100vh - 160px); }
   .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--hint); }
   .bar { flex: 1; height: 6px; background: rgba(127,127,127,.2); border-radius: 3px; overflow: hidden; }
   .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s; }
-  .stage { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; perspective: 1200px; }
-  .card { width: min(92vw, 420px); height: min(60vh, 440px); position: absolute; border-radius: 24px; background: var(--card); box-shadow: 0 12px 40px rgba(0,0,0,.14); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 28px 22px; cursor: pointer; user-select: none; transform-style: preserve-3d; transition: transform .35s ease, opacity .3s ease; touch-action: pan-y; }
+  .stage { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; perspective: 1200px; min-height: 380px; }
+  .card { width: min(92vw, 420px); height: min(56vh, 420px); position: absolute; border-radius: 24px; background: var(--card); box-shadow: 0 12px 40px rgba(0,0,0,.14); display: flex; align-items: center; justify-content: center; text-align: center; cursor: pointer; user-select: none; transform-style: preserve-3d; transition: transform .35s ease, opacity .3s ease; touch-action: pan-y; }
   .card.flipped .face.front { transform: rotateY(180deg); }
   .card.flipped .face.back { transform: rotateY(0deg); }
   .face { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 28px 22px; border-radius: 24px; backface-visibility: hidden; transition: transform .35s ease; }
   .face.back { transform: rotateY(-180deg); }
-  .word { font-size: clamp(26px, 7vw, 40px); font-weight: 600; letter-spacing: .2px; }
+  .word { font-size: clamp(26px, 7vw, 40px); font-weight: 600; }
   .trans { font-size: clamp(20px, 5.5vw, 28px); margin-top: 6px; }
   .small { font-size: 14px; color: var(--hint); margin-top: 14px; }
   .box { position: absolute; top: 14px; right: 18px; font-size: 12px; color: var(--hint); }
@@ -38,205 +94,28 @@
   .stamp { position: absolute; top: 24px; padding: 6px 12px; border: 3px solid; border-radius: 10px; font-weight: 800; font-size: 20px; letter-spacing: 1px; opacity: 0; transform: rotate(-12deg); }
   .stamp.ok { right: 24px; color: var(--ok); border-color: var(--ok); }
   .stamp.no { left: 24px; color: var(--no); border-color: var(--no); transform: rotate(12deg); }
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
-  .btn { border: 0; border-radius: 16px; padding: 16px 12px; font-size: 17px; font-weight: 600; color: #fff; }
-  .btn.no { background: var(--no); } .btn.ok { background: var(--ok); }
-  .btn.flip { grid-column: 1 / -1; background: var(--accent); color: var(--accent-fg); }
-  .btn:active { filter: brightness(.92); }
+  .tactions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; min-height: 52px; }
+  .tactions .btn.flip { grid-column: 1 / -1; }
   .hint { text-align: center; color: var(--hint); font-size: 14px; margin-top: 10px; min-height: 20px; }
   .done { text-align: center; padding: 24px 12px; }
   .done h2 { margin: 0 0 8px; font-size: 24px; }
-  .done .nums { display: flex; justify-content: center; gap: 24px; margin: 18px 0; font-size: 18px; }
-  .done .nums b { display: block; font-size: 34px; }
-  .list { text-align: left; max-height: 36vh; overflow: auto; margin: 0 auto; max-width: 420px; font-size: 15px; }
+  .nums { display: flex; justify-content: center; gap: 24px; margin: 18px 0; font-size: 18px; }
+  .nums b { display: block; font-size: 34px; }
+  .list { text-align: left; max-height: 30vh; overflow: auto; margin: 0 auto; max-width: 420px; font-size: 15px; }
   .list div { padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,.15); display: flex; justify-content: space-between; gap: 10px; }
-  .empty { text-align: center; color: var(--hint); padding: 40px 16px; }
 </style>
 </head>
 <body>
-<div id="app">
-  <div class="top"><span id="counter">0/0</span><div class="bar"><i id="bar"></i></div><span id="score">✅ 0 · ❌ 0</span></div>
-  <div class="stage" id="stage"></div>
-  <div class="actions" id="actions">
-    <button class="btn flip" id="flipBtn">Показать перевод</button>
-  </div>
-  <div class="hint" id="hint">Нажми на карточку, чтобы перевернуть. Свайп вправо — помню, влево — не помню.</div>
-</div>
-<script>
-(function () {
-  var tg = window.Telegram && window.Telegram.WebApp;
-  if (tg) { tg.ready(); tg.expand(); }
-  var $ = function (id) { return document.getElementById(id); };
-
-  function decode(b64) {
-    var s = b64.replace(/-/g, '+').replace(/_/g, '/');
-    while (s.length % 4) s += '=';
-    var bin = atob(s);
-    var bytes = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }
-
-  var deck = null;
-  try {
-    var m = (location.hash || '').match(/d=([A-Za-z0-9_-]+)/);
-    if (m) deck = decode(m[1]);
-  } catch (e) { deck = null; }
-
-  if (!deck || !deck.cards || !deck.cards.length) {
-    $('stage').innerHTML = deck && deck.m
-      ? '<div class="empty">🎉 Все карточки повторены.<br>Новые появятся по расписанию или из уроков — бот обновит эту кнопку сам.</div>'
-      : '<div class="empty">Колода не передана.<br>Открой тренажёр из бота: «🗣 Язык» → «Карточки» → «В приложении».</div>';
-    $('actions').style.display = 'none'; $('hint').textContent = '';
-    if (tg && tg.MainButton) { tg.MainButton.setText('Закрыть'); tg.MainButton.show(); tg.MainButton.onClick(function () { tg.close(); }); }
-    return;
-  }
-
-  var cards = deck.cards, lang = deck.lang || 'es';
-  var i = 0, ok = 0, no = 0, results = [], flipped = false, flippedAt = 0;
-  var speechLang = { es: 'es-ES', en: 'en-US', it: 'it-IT', fr: 'fr-FR', de: 'de-DE', pt: 'pt-PT', tr: 'tr-TR', kk: 'kk-KZ' }[lang] || lang;
-  var voice = null;
-  function pickVoice() {
-    if (!('speechSynthesis' in window)) return;
-    var vs = speechSynthesis.getVoices();
-    voice = vs.find(function (v) { return v.lang === speechLang; }) || vs.find(function (v) { return v.lang.slice(0, 2) === speechLang.slice(0, 2); }) || null;
-  }
-  if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
-  function speak(text) {
-    if (!('speechSynthesis' in window)) return;
-    try {
-      speechSynthesis.cancel();
-      var u = new SpeechSynthesisUtterance(text);
-      u.lang = speechLang; if (voice) u.voice = voice; u.rate = 0.92;
-      speechSynthesis.speak(u);
-    } catch (e) {}
-  }
-
-  function haptic(kind) { try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(kind); } catch (e) {} }
-
-  function render() {
-    $('counter').textContent = (i + 1) + '/' + cards.length;
-    $('bar').style.width = Math.round((i / cards.length) * 100) + '%';
-    $('score').textContent = '✅ ' + ok + ' · ❌ ' + no;
-    var c = cards[i];
-    flipped = false;
-    $('stage').innerHTML =
-      '<div class="card" id="card">' +
-        '<div class="face front"><span class="box">коробка ' + (c.x || 1) + '</span><button class="speak" id="spk" aria-label="Озвучить">🔊</button><div class="word">' + esc(c.f) + '</div><div class="small">нажми, чтобы увидеть перевод</div></div>' +
-        '<div class="face back"><span class="box">коробка ' + (c.x || 1) + '</span><div class="word">' + esc(c.f) + '</div><div class="trans">' + esc(c.b) + '</div></div>' +
-        '<div class="stamp ok" id="stOk">ПОМНЮ</div><div class="stamp no" id="stNo">НЕ ПОМНЮ</div>' +
-      '</div>';
-    $('actions').innerHTML = '<button class="btn flip" id="flipBtn">Показать перевод</button>';
-    var card = $('card');
-    card.addEventListener('click', function (e) { if (e.target.id !== 'spk') flip(); });
-    $('spk').addEventListener('click', function (e) { e.stopPropagation(); speak(c.f); });
-    $('flipBtn').addEventListener('click', flip);
-    attachSwipe(card);
-  }
-
-  function flip() {
-    if (flipped) return;
-    flipped = true;
-    flippedAt = Date.now();
-    $('card').classList.add('flipped');
-    // Кнопки ответа появляются чуть позже и не принимают нажатие сразу: иначе тап по
-    // «Показать перевод» долетал до «Помню», вставшей на то же место.
-    $('actions').innerHTML = '';
-    setTimeout(function () {
-      if (!flipped) return;
-      $('actions').innerHTML = '<button class="btn no" id="noBtn">❌ Не помню</button><button class="btn ok" id="okBtn">✅ Помню</button>';
-      $('noBtn').addEventListener('click', function () { answer(false); });
-      $('okBtn').addEventListener('click', function () { answer(true); });
-    }, 120);
-    speak(cards[i].f);
-  }
-
-  function answer(remembered) {
-    var card = $('card');
-    if (!card || card.dataset.done) return;
-    if (Date.now() - flippedAt < 350) return;
-    card.dataset.done = '1';
-    results.push({ i: cards[i].i, ok: remembered });
-    if (remembered) ok++; else no++;
-    haptic(remembered ? 'success' : 'warning');
-    card.classList.add(remembered ? 'out-right' : 'out-left');
-    setTimeout(function () {
-      i++;
-      if (i >= cards.length) finish(); else render();
-    }, 280);
-  }
-
-  function attachSwipe(card) {
-    var startX = 0, dx = 0, dragging = false;
-    card.addEventListener('pointerdown', function (e) { startX = e.clientX; dragging = true; card.style.transition = 'none'; card.setPointerCapture(e.pointerId); });
-    card.addEventListener('pointermove', function (e) {
-      if (!dragging) return;
-      dx = e.clientX - startX;
-      card.style.transform = 'translateX(' + dx + 'px) rotate(' + dx / 18 + 'deg)';
-      $('stOk').style.opacity = Math.min(1, Math.max(0, dx / 90));
-      $('stNo').style.opacity = Math.min(1, Math.max(0, -dx / 90));
-    });
-    function end() {
-      if (!dragging) return;
-      dragging = false;
-      card.style.transition = '';
-      if (Math.abs(dx) > 100) {
-        if (!flipped) { flipped = true; card.classList.add('flipped'); }
-        answer(dx > 0);
-      } else {
-        card.style.transform = '';
-        $('stOk').style.opacity = 0; $('stNo').style.opacity = 0;
-      }
-      dx = 0;
-    }
-    card.addEventListener('pointerup', end);
-    card.addEventListener('pointercancel', end);
-  }
-
-  function finish() {
-    $('bar').style.width = '100%';
-    $('counter').textContent = cards.length + '/' + cards.length;
-    var missed = results.filter(function (r) { return !r.ok; }).map(function (r) { return cards.find(function (c) { return c.i === r.i; }); });
-    $('stage').innerHTML =
-      '<div class="done"><h2>Готово!</h2><div class="nums"><div>✅<b>' + ok + '</b>помню</div><div>❌<b>' + no + '</b>не помню</div></div>' +
-      (missed.length ? '<div class="list">' + missed.map(function (c) { return '<div><span>' + esc(c.f) + '</span><span>' + esc(c.b) + '</span></div>'; }).join('') + '</div>' : '<div class="small">Все карточки на месте 🎉</div>') +
-      '</div>';
-    $('actions').innerHTML = '';
-    var inTelegram = tg && tg.initData;
-    $('hint').textContent = inTelegram ? 'Нажми кнопку внизу, чтобы бот записал результат.' : 'Открыто вне Telegram — результаты не отправляются.';
-    if (tg && tg.MainButton) {
-      tg.MainButton.setText('Отправить боту');
-      tg.MainButton.show();
-      tg.MainButton.onClick(function () {
-        try {
-          if (deck.m && deck.d && deck.u) {
-            // Открыто кнопкой меню: sendData тут недоступен, итог едет /start-ссылкой (две битовые маски по порядку колоды).
-            tg.openTelegramLink('https://t.me/' + deck.u + '?start=' + startPayload());
-            setTimeout(function () { tg.close(); }, 300);
-          } else {
-            tg.sendData(JSON.stringify({ type: 'cards', results: results }));
-          }
-        } catch (e) { $('hint').textContent = 'Не удалось отправить: ' + e; }
-      });
-    }
-  }
-
-  function startPayload() {
-    var n = cards.length, answered = new Uint8Array(Math.ceil(n / 8)), okMask = new Uint8Array(Math.ceil(n / 8));
-    cards.forEach(function (c, idx) {
-      var r = results.find(function (x) { return x.i === c.i; });
-      if (!r) return;
-      answered[idx >> 3] |= 1 << (idx & 7);
-      if (r.ok) okMask[idx >> 3] |= 1 << (idx & 7);
-    });
-    var b64 = function (u8) { var s = ''; for (var k = 0; k < u8.length; k++) s += String.fromCharCode(u8[k]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
-    return 'cr_' + deck.d.toString(36) + '_' + b64(answered) + '_' + b64(okMask);
-  }
-
-  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
-  render();
-})();
-</script>
+<header><div><h1 id="title">Помощник</h1><div class="sub" id="sub"></div></div><button class="back" id="back" style="display:none">← Назад</button></header>
+<main id="main"><div class="empty">Загружаю…</div></main>
+<button class="fab" id="fab" style="display:none" aria-label="Добавить">+</button>
+<nav id="nav" style="display:none">
+  <button data-tab="today"><i>📅</i>Сегодня</button>
+  <button data-tab="notes"><i>📝</i>Заметки</button>
+  <button data-tab="tasks"><i>✅</i>Задачи</button>
+  <button data-tab="reminders"><i>⏰</i>Напомн.</button>
+  <button data-tab="learn"><i>🗣</i>Язык</button>
+</nav>
+<script src="app.js?v=2"></script>
 </body>
 </html>
