@@ -90,7 +90,7 @@
   }
 
   var cards = deck.cards, lang = deck.lang || 'es';
-  var i = 0, ok = 0, no = 0, results = [], flipped = false;
+  var i = 0, ok = 0, no = 0, results = [], flipped = false, flippedAt = 0;
   var speechLang = { es: 'es-ES', en: 'en-US', it: 'it-IT', fr: 'fr-FR', de: 'de-DE', pt: 'pt-PT', tr: 'tr-TR', kk: 'kk-KZ' }[lang] || lang;
   var voice = null;
   function pickVoice() {
@@ -134,16 +134,24 @@
   function flip() {
     if (flipped) return;
     flipped = true;
+    flippedAt = Date.now();
     $('card').classList.add('flipped');
-    $('actions').innerHTML = '<button class="btn no" id="noBtn">❌ Не помню</button><button class="btn ok" id="okBtn">✅ Помню</button>';
-    $('noBtn').addEventListener('click', function () { answer(false); });
-    $('okBtn').addEventListener('click', function () { answer(true); });
+    // Кнопки ответа появляются чуть позже и не принимают нажатие сразу: иначе тап по
+    // «Показать перевод» долетал до «Помню», вставшей на то же место.
+    $('actions').innerHTML = '';
+    setTimeout(function () {
+      if (!flipped) return;
+      $('actions').innerHTML = '<button class="btn no" id="noBtn">❌ Не помню</button><button class="btn ok" id="okBtn">✅ Помню</button>';
+      $('noBtn').addEventListener('click', function () { answer(false); });
+      $('okBtn').addEventListener('click', function () { answer(true); });
+    }, 120);
     speak(cards[i].f);
   }
 
   function answer(remembered) {
     var card = $('card');
     if (!card || card.dataset.done) return;
+    if (Date.now() - flippedAt < 350) return;
     card.dataset.done = '1';
     results.push({ i: cards[i].i, ok: remembered });
     if (remembered) ok++; else no++;
