@@ -2,8 +2,10 @@
  * Живой разговор: бот играет носителя языка. Короткие реплики, вопрос в конце, мягкие
  * подсказки по-русски в скобках. История разговора отдельная от основного агента.
  */
+import { parseModelJson, simplePrompt } from "../llm/gemini.ts";
 import type { LlmMessage } from "../llm/types.ts";
 import { log, errMsg } from "../runtime/log.ts";
+import { reviewCard } from "./cards.ts";
 import { escapeHtml } from "../telegram/format.ts";
 import type { InlineButton } from "../telegram/sender.ts";
 import type { LearnCtx } from "./lesson.ts";
@@ -14,8 +16,11 @@ import { TOPICS } from "./types.ts";
 
 const STOP_BTN: InlineButton[][] = [[{ text: "✖ Закончить разговор", callback_data: "learn:talk:stop" }]];
 
-function talkSystem(langName: string, level: string, topic: string): string {
-  return `Ты — Lucía, носитель языка «${langName}» из Мадрида, дружелюбная собеседница для практики. Ученик — русскоязычный, уровень ${level}. Тема разговора: «${topic}».
+function talkSystem(langName: string, level: string, topic: string, reviewWords: string[] = []): string {
+  const review = reviewWords.length
+    ? `\nЦель этого разговора — чтобы ученик САМ употребил слова: ${reviewWords.join(", ")}. Задавай вопросы и строй ситуации так, чтобы эти слова напрашивались в ответе (по 1–2 слова за реплику), сам их не произноси первым без нужды. Когда ученик употребил слово из списка правильно — отметь в конце реплики по-русски в скобках: (✓ слово).`
+    : "";
+  return `Ты — носитель языка «${langName}» (представься коротким именем, типичным для этого языка; для испанского — Lucía из Мадрида, для английского — Emma из Лондона), дружелюбная собеседница для практики. Ученик — русскоязычный, уровень ${level}. Тема разговора: «${topic}».${review}
 Правила:
 - Отвечай ТОЛЬКО на изучаемом языке, 1–3 коротких предложения, лексика и грамматика уровня ${level} (на A1 — очень простые фразы, настоящее время).
 - В конце каждой реплики задавай один вопрос, чтобы ученик продолжил говорить.
@@ -25,13 +30,16 @@ function talkSystem(langName: string, level: string, topic: string): string {
 - Не используй markdown, списки и эмодзи. Не начинай каждую реплику с приветствия.`;
 }
 
-export async function startTalk(ctx: LearnCtx, topic: string): Promise<void> {
+export async function startTalk(ctx: LearnCtx, topic: string, opts: { reviewCards?: TalkSession["reviewCards"] } = {}): Promise<void> {
   const s = getLearnSettings(ctx.chatId);
-  const session: TalkSession = { kind: "talk", topic, messages: [], turns: 0, startedAt: Date.now() };
+  const session: TalkSession = { kind: "talk", topic, messages: [], turns: 0, startedAt: Date.now(), reviewCards: opts.reviewCards?.length ? opts.reviewCards : undefined };
   setLearnSession(ctx.chatId, session);
+  const reviewNote = session.reviewCards
+    ? `\nПовторяем в деле: ${session.reviewCards.map((c) => `<b>${escapeHtml(c.front)}</b>`).join(", ")}. Старайся употребить их в ответах — что употребишь правильно, отметится как «помню».`
+    : "";
   await ctx.sender.sendText(
     ctx.chatId,
-    `🗣 <b>Разговор: ${escapeHtml(topic)}</b>\nСобеседница — Lucía, отвечает на ${escapeHtml(s.langName)} уровня ${s.level}, подсказки по-русски в скобках. Пиши или надиктовывай голосовые. Выйти — кнопка ниже или слово «стоп».`,
+    `🗣 <b>Разговор: ${escapeHtml(topic)}</b>\nСобеседница — носитель, отвечает на языке «${escapeHtml(s.langName)}» уровня ${s.level}, подсказки по-русски в скобках. Лучше всего отвечать голосовыми. Выйти — кнопка ниже или слово «стоп».${reviewNote}`,
     { html: true },
   );
   await talkTurn(ctx, session, `(начни разговор на тему «${topic}»: поздоровайся одной фразой и задай простой вопрос)`, true);
@@ -39,7 +47,7 @@ export async function startTalk(ctx: LearnCtx, topic: string): Promise<void> {
 
 export async function talkTurn(ctx: LearnCtx, session: TalkSession, userText: string, opener = false): Promise<void> {
   const s = getLearnSettings(ctx.chatId);
-  const system = talkSystem(s.langName, s.level, session.topic);
+  const system = talkSystem(s.langName, s.level, session.topic, session.reviewCards?.map((c) => c.front) ?? []);
   const messages: LlmMessage[] = [...session.messages, { role: "user", text: userText }];
   void ctx.sender.typing(ctx.chatId);
   let reply = "";
@@ -75,11 +83,34 @@ export async function endTalk(ctx: LearnCtx, session: TalkSession, messageId?: n
   clearLearnSession(ctx.chatId);
   const mins = Math.max(1, Math.round((Date.now() - session.startedAt) / 60_000));
   let summary = "";
+  let reviewed = "";
+  const transcript = session.messages.map((m) => `${m.role === "user" ? "Ученик" : "Собеседница"}: ${m.text ?? ""}`).join("\n");
+  if (session.reviewCards?.length && session.turns >= 1) {
+    // Какие слова из колоды ученик употребил правильно — те и «помню».
+    try {
+      const s = getLearnSettings(ctx.chatId);
+      const text = await simplePrompt(
+        ctx.model,
+        `Язык: ${s.langName}. Слова для повторения: ${session.reviewCards.map((c) => c.front).join(", ")}.\nСтенограмма:\n${transcript}\n\nКакие из слов ученик (не собеседница!) употребил сам и правильно по смыслу и форме? Верни строго JSON: {"used":["слово", ...]}`,
+        { fast: true, json: true, temperature: 0 },
+      );
+      const used = new Set((parseModelJson<{ used?: unknown }>(text).used as unknown[] | undefined)?.map((w) => String(w).toLowerCase().trim()) ?? []);
+      const ok: string[] = [];
+      for (const c of session.reviewCards) {
+        if (used.has(c.front.toLowerCase()) || [...used].some((u) => u.includes(c.front.toLowerCase()) || c.front.toLowerCase().includes(u))) {
+          reviewCard(ctx.chatId, c.id, true);
+          ok.push(c.front);
+        }
+      }
+      reviewed = ok.length ? `\n\n✅ Закрепил в разговоре: ${ok.join(", ")}${ok.length < session.reviewCards.length ? `\nОстались на повтор: ${session.reviewCards.filter((c) => !ok.includes(c.front)).map((c) => c.front).join(", ")}` : ""}` : `\n\nСлова из колоды в разговоре не прозвучали — они остались на повтор.`;
+    } catch (e) {
+      log.warn("learn", `разбор повторения: ${errMsg(e)}`);
+    }
+  }
   if (session.turns >= 2) {
     try {
       void ctx.sender.typing(ctx.chatId);
       const s = getLearnSettings(ctx.chatId);
-      const transcript = session.messages.map((m) => `${m.role === "user" ? "Ученик" : "Lucía"}: ${m.text ?? ""}`).join("\n");
       const turn = await ctx.model.generate({
         system: `Ты преподаватель языка «${s.langName}». По стенограмме разговора дай ученику (уровень ${s.level}) короткий разбор по-русски: 2–4 пункта — что было хорошо, какие ошибки повторялись, 3 полезных слова или фразы из разговора с переводом. Без markdown-заголовков, списки через «•», до 700 знаков.`,
         messages: [{ role: "user", text: transcript }],
@@ -92,8 +123,8 @@ export async function endTalk(ctx: LearnCtx, session: TalkSession, messageId?: n
       /* разбор не критичен */
     }
   }
-  await ctx.sender.sendText(ctx.chatId, `Разговор окончен: ${session.turns} ${session.turns === 1 ? "реплика" : session.turns < 5 ? "реплики" : "реплик"}, ${mins} мин.${summary ? `\n\n${summary}` : ""}`, {
-    inline: [[{ text: "🇪🇸 Меню обучения", callback_data: "learn:menu" }]],
+  await ctx.sender.sendText(ctx.chatId, `Разговор окончен: ${session.turns} ${session.turns === 1 ? "реплика" : session.turns < 5 ? "реплики" : "реплик"}, ${mins} мин.${reviewed}${summary ? `\n\n${summary}` : ""}`, {
+    inline: [[{ text: "🗣 Меню обучения", callback_data: "learn:menu" }]],
   });
 }
 

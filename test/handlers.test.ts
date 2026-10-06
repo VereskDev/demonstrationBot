@@ -7,12 +7,12 @@ import { addReminder, addTask, getReminder, getTask, listNotes, useMemoryDb } fr
 import { handleUpdate } from "../src/telegram/handlers.ts";
 import { BTN } from "../src/telegram/keyboards.ts";
 import type { TelegramApi } from "../src/telegram/api.ts";
-import type { InlineButton, SendOptions } from "../src/telegram/sender.ts";
+import type { InlineButton, KeyboardButton, SendOptions } from "../src/telegram/sender.ts";
 import { buildToolset } from "../src/tools/registry.ts";
 import { startReminderScheduler } from "../src/scheduler/reminders.ts";
 
 class FakeTg {
-  sent: Array<{ kind: string; chatId: string; text: string; inline?: InlineButton[][]; keyboard?: string[][] }> = [];
+  sent: Array<{ kind: string; chatId: string; text: string; inline?: InlineButton[][]; keyboard?: KeyboardButton[][] }> = [];
   edits: Array<{ messageId: number; text: string; inline?: InlineButton[][] }> = [];
   answers: string[] = [];
   commandsSet = 0;

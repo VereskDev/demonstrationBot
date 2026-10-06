@@ -43,7 +43,12 @@ export class TelegramApi implements Sender {
       };
     }
     if (opts.keyboard) {
-      return { keyboard: opts.keyboard.map((row) => row.map((text) => ({ text }))), resize_keyboard: true, is_persistent: true };
+      return {
+        keyboard: opts.keyboard.map((row) => row.map((b) => (typeof b === "string" ? { text: b } : b.web_app ? { text: b.text, web_app: { url: b.web_app.url } } : { text: b.text }))),
+        resize_keyboard: true,
+        is_persistent: !opts.oneTime,
+        one_time_keyboard: Boolean(opts.oneTime),
+      };
     }
     return undefined;
   }

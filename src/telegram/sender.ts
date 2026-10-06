@@ -8,11 +8,16 @@ export interface InlineButton {
   url?: string;
 }
 
+/** Кнопка обычной клавиатуры: текст или кнопка, открывающая Mini App. */
+export type KeyboardButton = string | { text: string; web_app?: { url: string } };
+
 export interface SendOptions {
   /** Inline-кнопки под сообщением (ряды). */
   inline?: InlineButton[][];
-  /** Обычная клавиатура (ряды текстов). */
-  keyboard?: string[][];
+  /** Обычная клавиатура (ряды). */
+  keyboard?: KeyboardButton[][];
+  /** Спрятать клавиатуру после первого нажатия. */
+  oneTime?: boolean;
   /** Отдать HTML как есть (без форматирования markdown-лайт). */
   html?: boolean;
   /** Не показывать превью ссылок. */

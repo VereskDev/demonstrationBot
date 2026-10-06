@@ -7,6 +7,11 @@ export const FOCUS_LABEL: Record<Focus, string> = { grammar: "грамматик
 export type Level = "A1" | "A2" | "B1";
 export const LEVELS: Level[] = ["A1", "A2", "B1"];
 
+const FLAGS: Record<string, string> = { es: "🇪🇸", en: "🇬🇧", it: "🇮🇹", fr: "🇫🇷", de: "🇩🇪", pt: "🇵🇹", tr: "🇹🇷", kk: "🇰🇿", zh: "🇨🇳", ja: "🇯🇵", ko: "🇰🇷" };
+export function langFlag(code: string): string {
+  return FLAGS[String(code).toLowerCase()] ?? "🗣";
+}
+
 export interface TopicDef {
   id: string;
   title: string;
@@ -107,13 +112,20 @@ export interface TalkSession {
   messages: LlmMessage[];
   turns: number;
   startedAt: number;
+  /** Повторение карточек в разговоре: какие слова собеседница должна «вытащить» из ученика. */
+  reviewCards?: Array<{ id: number; front: string; back: string }>;
 }
 
 export interface TopicPromptSession {
   kind: "topic_prompt";
 }
 
-export type LearnSession = LessonSession | CardsSession | TalkSession | TopicPromptSession;
+/** Ждём тему для генерации карточек. */
+export interface GenPromptSession {
+  kind: "gen_prompt";
+}
+
+export type LearnSession = LessonSession | CardsSession | TalkSession | TopicPromptSession | GenPromptSession;
 
 export interface LearnSettings {
   lang: string;

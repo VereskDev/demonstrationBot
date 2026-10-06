@@ -23,7 +23,9 @@ import {
   chatTz,
 } from "../db/index.ts";
 import { simplePrompt } from "../llm/gemini.ts";
-import { addCardManually, handleLearnCallback, handleLearnText, hasActiveLearnSession, learnMenuView, parseCardCommand, type LearnCtx } from "../learn/index.ts";
+import { addCardManually, applyWebAppResults, handleLearnCallback, handleLearnText, hasActiveLearnSession, learnMenuView, parseCardCommand, type LearnCtx } from "../learn/index.ts";
+import { parseWebAppResults } from "../learn/cardsGen.ts";
+import { cardStats } from "../learn/cards.ts";
 import { clearLearnSession, getLearnSession } from "../learn/store.ts";
 import { endTalk } from "../learn/conversation.ts";
 import { quitLesson } from "../learn/lesson.ts";
@@ -84,6 +86,23 @@ async function handleMessage(deps: HandlerDeps, m: IncomingMessage): Promise<voi
   const chatId = m.chatId;
   const tz = chatTz(chatId);
   const text = m.text;
+
+  // ── результаты из Mini App (тренажёр карточек) ──
+  if (m.webAppData) {
+    const results = parseWebAppResults(m.webAppData);
+    if (!results) {
+      await deps.tg.sendText(chatId, "Не понял данные из приложения.", { keyboard: MAIN_KEYBOARD });
+      return;
+    }
+    const r = applyWebAppResults(chatId, results);
+    const c = cardStats(chatId);
+    await deps.tg.sendText(chatId, `🃏 Записал: помню ${r.known}, не помню ${r.unknown}.${c.due ? ` Ещё к повторению: ${c.due}.` : " На сегодня всё."}`, { keyboard: MAIN_KEYBOARD, inline: undefined });
+    return;
+  }
+  if (text === BTN.back) {
+    await deps.tg.sendText(chatId, "Главное меню.", { keyboard: MAIN_KEYBOARD });
+    return;
+  }
 
   // ── команды ──
   if (m.isCommand) {

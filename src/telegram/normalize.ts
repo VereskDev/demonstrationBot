@@ -16,6 +16,8 @@ export interface IncomingMessage {
   documentFileId?: string;
   documentMime?: string;
   documentName?: string;
+  /** Данные из Mini App (Telegram.WebApp.sendData). */
+  webAppData?: string;
   isCommand: boolean;
   date: number;
 }
@@ -60,7 +62,9 @@ export function normalizeUpdate(update: Json): Incoming {
   const photos = Array.isArray(msg.photo) ? (msg.photo as Json[]) : [];
   const doc = msg.document as Json | undefined;
   const photoFileId = photos.length ? String(photos[photos.length - 1]?.file_id ?? "") : "";
-  if (!text && !voice && !photoFileId && !doc) return { kind: "skip", reason: "no_content" };
+  const webApp = msg.web_app_data as Json | undefined;
+  const webAppData = webApp && typeof webApp.data === "string" ? webApp.data : undefined;
+  if (!text && !voice && !photoFileId && !doc && !webAppData) return { kind: "skip", reason: "no_content" };
   return {
     kind: "message",
     chatId: String(chat.id),
@@ -75,6 +79,7 @@ export function normalizeUpdate(update: Json): Incoming {
     documentFileId: doc ? String(doc.file_id ?? "") : undefined,
     documentMime: doc ? String(doc.mime_type ?? "") : undefined,
     documentName: doc ? String(doc.file_name ?? "") : undefined,
+    webAppData,
     isCommand: /^\/\w+/.test(text),
     date: Number(msg.date ?? 0) * 1000 || Date.now(),
   };

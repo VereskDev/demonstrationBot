@@ -47,6 +47,8 @@ export const config = {
   cfApiToken: str("CF_API_TOKEN"),
   imageModel: str("IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell"),
   defaultTimezone: str("DEFAULT_TIMEZONE", "Asia/Almaty"),
+  /** Mini App тренажёра карточек (GitHub Pages из webapp/). Пусто — кнопка приложения не показывается. */
+  webappUrl: str("WEBAPP_URL", "https://vereskdev.github.io/demonstrationBot/"),
   dataDir: path.resolve(process.cwd(), str("DATA_DIR", "./data")),
   /** Сколько сообщений истории держим в контексте модели. */
   historyLimit: num("HISTORY_LIMIT", 40),

@@ -13,7 +13,7 @@ import { buildLesson, pickTopic, planSteps } from "./generator.ts";
 import { clearLearnSession, getLearnProgress, getLearnSettings, recordLessonDone, setLearnSession, cacheLesson } from "./store.ts";
 import { speakablePart, synthesize } from "./tts.ts";
 import type { Exercise, Lesson, LessonSession, Step } from "./types.ts";
-import { TOPICS } from "./types.ts";
+import { TOPICS, langFlag } from "./types.ts";
 
 export interface LearnCtx {
   chatId: string;
@@ -55,7 +55,14 @@ export async function startLesson(ctx: LearnCtx, opts: { topic?: string } = {}):
   await ctx.sender.sendText(ctx.chatId, `Собираю урок по теме «${topic.title}» (${settings.level}, фокус: ${settings.focus.map((f) => ({ grammar: "грамматика", conversation: "разговор", listening: "аудирование" })[f]).join(", ")})…`);
   void ctx.sender.typing(ctx.chatId);
   const recent = progress.history.filter((h) => h.topic === topic.id).slice(-3).map((h) => h.date);
-  const lesson = await buildLesson(ctx.model, settings, topic, recent);
+  let lesson: Lesson;
+  try {
+    lesson = await buildLesson(ctx.model, settings, topic, recent);
+  } catch (e) {
+    log.warn("learn", `урок не собрался: ${errMsg(e)}`);
+    await ctx.sender.sendText(ctx.chatId, `Не получилось собрать урок: ${errMsg(e)}. Попробуй через пару минут.`, { inline: [[{ text: "Повторить", callback_data: "learn:lesson" }, { text: "← Меню", callback_data: "learn:menu" }]] });
+    return;
+  }
   cacheLesson(ctx.chatId, topic.id, settings.level, lesson);
   const session: LessonSession = {
     kind: "lesson",
@@ -83,7 +90,7 @@ export async function renderStep(ctx: LearnCtx, s: LessonSession): Promise<void>
     case "intro": {
       await ctx.sender.sendText(
         ctx.chatId,
-        `🇪🇸 <b>${escapeHtml(L.title)}</b>\nТема: ${escapeHtml(L.topic)} · уровень ${L.level}${L.source === "bank" ? " · из банка уроков" : ""}\n\nВ уроке: ${L.vocab.length} слов${L.grammar && s.steps.some((x) => x.kind === "grammar") ? ", грамматика" : ""}, ${L.phrases.length} фраз${s.steps.some((x) => x.kind === "listening") ? `, аудирование ×${L.listening.length}` : ""}, упражнения ×${L.exercises.length}, тест ×${L.quiz.length}. Минут на 15.`,
+        `${langFlag(settings.lang)} <b>${escapeHtml(L.title)}</b>\nТема: ${escapeHtml(L.topic)} · ${escapeHtml(settings.langName)}, уровень ${L.level}${L.source === "bank" ? " · из банка уроков" : ""}\n\nВ уроке: ${L.vocab.length} слов${L.grammar && s.steps.some((x) => x.kind === "grammar") ? ", грамматика" : ""}, ${L.phrases.length} фраз${s.steps.some((x) => x.kind === "listening") ? `, аудирование ×${L.listening.length}` : ""}, упражнения ×${L.exercises.length}, тест ×${L.quiz.length}. Минут на 15.`,
         { html: true, inline: [[{ text: "Начать ▶", callback_data: "learn:next" }, { text: "Другая тема", callback_data: "learn:topics" }]] },
       );
       break;
@@ -285,7 +292,7 @@ export async function quitLesson(ctx: LearnCtx, s: LessonSession, messageId?: nu
   for (const m of s.mistakes) if (addCard(ctx.chatId, m.es, m.ru, "lesson").created) added += 1;
   clearLearnSession(ctx.chatId);
   await ctx.sender.sendText(ctx.chatId, `Урок прерван на шаге ${s.i + 1}/${s.steps.length}.${added ? ` Ошибки (${added}) сохранил в карточки.` : ""}`, {
-    inline: [[{ text: "🇪🇸 Меню обучения", callback_data: "learn:menu" }]],
+    inline: [[{ text: "🗣 Меню обучения", callback_data: "learn:menu" }]],
   });
 }
 

@@ -131,10 +131,13 @@ export async function buildLesson(model: ModelTransport, settings: LearnSettings
       log.info("learn", `урок «${lesson.title}» сгенерирован за ${Date.now() - t0}мс (${lesson.vocab.length} слов, ${lesson.exercises.length} упр., ${lesson.quiz.length} вопр.)`);
       return lesson;
     }
-    log.warn("learn", "модель вернула неполный урок — беру банк");
+    log.warn("learn", "модель вернула неполный урок");
   } catch (e) {
-    log.warn("learn", `генерация урока не удалась: ${errMsg(e)} — беру банк`);
+    log.warn("learn", `генерация урока не удалась: ${errMsg(e)}`);
   }
+  // Банк написан для испанского — для другого языка подсовывать его нельзя.
+  if (settings.lang !== "es") throw new Error(`модель недоступна, а встроенных уроков для языка «${settings.langName}» нет`);
+  log.info("learn", "беру урок из банка");
   return bankLesson(topic, settings.level);
 }
 

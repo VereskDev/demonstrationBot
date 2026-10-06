@@ -2,15 +2,19 @@
  * Режим обучения: меню, карточки, статистика, настройки и роутинг callback/текста.
  * Экспортирует две точки входа для handlers.ts: handleLearnCallback и handleLearnText.
  */
+import { config } from "../config.ts";
+import { log, errMsg } from "../runtime/log.ts";
 import { escapeHtml } from "../telegram/format.ts";
+import { BTN } from "../telegram/keyboards.ts";
 import type { InlineButton } from "../telegram/sender.ts";
 import { formatDateTime } from "../time.ts";
 import { addCard, cardStats, dueCards, getCard, reviewCard } from "./cards.ts";
+import { encodeDeck, generateCards } from "./cardsGen.ts";
 import { endTalk, startTalk, talkTopicButtons, talkTurn, STOP_WORDS_RE } from "./conversation.ts";
 import { onLessonAnswer, onLessonNext, onLessonSkip, onLessonText, quitLesson, startLesson, topicButtons, type LearnCtx } from "./lesson.ts";
 import { clearLearnSession, getLearnProgress, getLearnSession, getLearnSettings, setLearnSession, setLearnSettings, toggleFocus } from "./store.ts";
 import { synthesize } from "./tts.ts";
-import { ALL_FOCUS, FOCUS_LABEL, LEVELS, TOPICS, type CardsSession, type Focus, type Level } from "./types.ts";
+import { ALL_FOCUS, FOCUS_LABEL, LEVELS, TOPICS, langFlag, type CardsSession, type Focus, type Level } from "./types.ts";
 
 export type { LearnCtx } from "./lesson.ts";
 export { startLesson } from "./lesson.ts";
@@ -22,17 +26,80 @@ export function learnMenuView(chatId: string): { text: string; inline: InlineBut
   const p = getLearnProgress(chatId);
   const c = cardStats(chatId);
   const text =
-    `🇪🇸 <b>${escapeHtml(s.langName[0].toUpperCase() + s.langName.slice(1))}</b> · уровень ${s.level}\n` +
+    `${langFlag(s.lang)} <b>${escapeHtml(s.langName[0].toUpperCase() + s.langName.slice(1))}</b> · уровень ${s.level}\n` +
     `Фокус: ${s.focus.map((f) => FOCUS_LABEL[f]).join(", ")}\n\n` +
     `🔥 Серия: ${p.streak} ${p.streak === 1 ? "день" : p.streak >= 2 && p.streak <= 4 ? "дня" : "дней"} · уроков: ${p.lessonsTotal}\n` +
     `🃏 Карточек: ${c.total}${c.due ? `, к повторению: <b>${c.due}</b>` : ""}` +
     (p.lastLessonDate ? `\nПоследний урок: ${p.lastLessonDate}` : "\nУроков ещё не было — начни с первого.");
   const inline: InlineButton[][] = [
     [{ text: "📖 Урок дня", callback_data: "learn:lesson" }, { text: c.due ? `🃏 Карточки (${c.due})` : "🃏 Карточки", callback_data: "learn:cards" }],
-    [{ text: "🗣 Разговор", callback_data: "learn:talk" }, { text: "📊 Статистика", callback_data: "learn:stats" }],
-    [{ text: "⚙️ Уровень и фокус", callback_data: "learn:settings" }],
+    [{ text: "🗣 Разговор", callback_data: "learn:talk" }, { text: "➕ Сгенерировать карточки", callback_data: "learn:gen" }],
+    [{ text: "📊 Статистика", callback_data: "learn:stats" }, { text: "⚙️ Уровень и фокус", callback_data: "learn:settings" }],
   ];
   return { text, inline };
+}
+
+/** Экран «Карточки»: выбор — Mini App или в чате. */
+export async function cardsEntry(ctx: LearnCtx, messageId?: number): Promise<void> {
+  const c = cardStats(ctx.chatId);
+  if (!c.due) {
+    const text = c.total ? `🃏 Все ${c.total} карточек повторены вовремя — следующие появятся по расписанию.` : "🃏 Карточек пока нет: они появятся из ошибок в уроках, сгенерируй их по теме или добавь сам: «карточка: la mesa — стол».";
+    const inline: InlineButton[][] = [[{ text: "➕ Сгенерировать", callback_data: "learn:gen" }, { text: "← Меню", callback_data: "learn:menu" }]];
+    if (messageId) await ctx.sender.editText(ctx.chatId, messageId, text, { inline }).catch(() => ctx.sender.sendText(ctx.chatId, text, { inline }));
+    else await ctx.sender.sendText(ctx.chatId, text, { inline });
+    return;
+  }
+  if (!config.webappUrl) return startCardsReview(ctx);
+  const text = `🃏 К повторению: <b>${c.due}</b> из ${c.total}.\n\nКак повторять?`;
+  const inline: InlineButton[][] = [
+    [{ text: "🗣 В разговоре с носителем", callback_data: "learn:cards:talk" }],
+    [{ text: "📱 В приложении (свайпы, озвучка)", callback_data: "learn:cards:app" }],
+    [{ text: "💬 Карточками в чате", callback_data: "learn:cards:chat" }, { text: "← Меню", callback_data: "learn:menu" }],
+  ];
+  if (messageId) await ctx.sender.editText(ctx.chatId, messageId, text, { html: true, inline }).catch(() => ctx.sender.sendText(ctx.chatId, text, { html: true, inline }));
+  else await ctx.sender.sendText(ctx.chatId, text, { html: true, inline });
+}
+
+/** Кнопка-клавиатура с Mini App: колода зашита в URL (#d=…), результаты вернутся через web_app_data. */
+export async function openCardsApp(ctx: LearnCtx): Promise<void> {
+  const due = dueCards(ctx.chatId, Date.now(), 30);
+  if (!due.length) return cardsEntry(ctx);
+  const s = getLearnSettings(ctx.chatId);
+  const url = `${config.webappUrl.replace(/\/?$/, "/")}#d=${encodeDeck(due, s.lang)}`;
+  await ctx.sender.sendText(ctx.chatId, `Тренажёр готов: ${due.length} карточек. Открой его кнопкой внизу — свайп вправо «помню», влево «не помню», в конце нажми «Отправить боту».`, {
+    keyboard: [[{ text: `🃏 Открыть тренажёр (${due.length})`, web_app: { url } }], [BTN.back]],
+    oneTime: false,
+  });
+}
+
+/** Результаты из Mini App → SRS. */
+export function applyWebAppResults(chatId: string, results: Array<{ id: number; ok: boolean }>): { known: number; unknown: number } {
+  let known = 0;
+  let unknown = 0;
+  for (const r of results) {
+    if (!reviewCard(chatId, r.id, r.ok)) continue;
+    if (r.ok) known += 1;
+    else unknown += 1;
+  }
+  return { known, unknown };
+}
+
+export async function generateCardsFlow(ctx: LearnCtx, topic: string, count = 15): Promise<void> {
+  const s = getLearnSettings(ctx.chatId);
+  await ctx.sender.sendText(ctx.chatId, `Подбираю карточки по теме «${topic}» (${s.langName}, ${s.level})…`);
+  void ctx.sender.typing(ctx.chatId);
+  try {
+    const r = await generateCards(ctx.model, ctx.chatId, s, topic, count);
+    const c = cardStats(ctx.chatId);
+    const sample = r.sample.map((x) => `• ${escapeHtml(x.front)} — ${escapeHtml(x.back)}`).join("\n");
+    await ctx.sender.sendText(ctx.chatId, `Добавил <b>${r.added}</b> карточек${r.duplicates ? ` (${r.duplicates} уже были)` : ""}. Всего в колоде ${c.total}, к повторению ${c.due}.${sample ? `\n\nНапример:\n${sample}` : ""}`, {
+      html: true,
+      inline: [[{ text: "🃏 Повторить сейчас", callback_data: "learn:cards" }, { text: "➕ Ещё тема", callback_data: "learn:gen" }], [{ text: "← Меню", callback_data: "learn:menu" }]],
+    });
+  } catch (e) {
+    log.warn("learn", `генерация карточек: ${errMsg(e)}`);
+    await ctx.sender.sendText(ctx.chatId, "Модель не ответила — попробуй через минуту.", { inline: [[{ text: "Повторить", callback_data: "learn:gen" }, { text: "← Меню", callback_data: "learn:menu" }]] });
+  }
 }
 
 export function learnStatsView(chatId: string): { text: string; inline: InlineButton[][] } {
@@ -57,7 +124,7 @@ export function learnSettingsView(chatId: string): { text: string; inline: Inlin
   const levelRow: InlineButton[] = LEVELS.map((l) => ({ text: `${l === s.level ? "● " : ""}${l}`, callback_data: `learn:level:${l}` }));
   const focusRow: InlineButton[] = ALL_FOCUS.map((f) => ({ text: `${s.focus.includes(f) ? "☑ " : "☐ "}${FOCUS_LABEL[f]}`, callback_data: `learn:focus:${f}` }));
   return {
-    text: `⚙️ <b>Настройки обучения</b>\n\nУровень: <b>${s.level}</b> — A1 начальный, A2 базовый, B1 средний.\nФокус урока (можно несколько): грамматика добавляет блок с таблицей, аудирование — задания на слух, разговорная речь — больше фраз.\n\nЯзык: ${escapeHtml(s.langName)}. Сменить — напиши мне, например «учу итальянский».`,
+    text: `⚙️ <b>Настройки обучения</b>\n\nУровень: <b>${s.level}</b> — A1 начальный, A2 базовый, B1 средний.\nФокус урока (можно несколько): грамматика добавляет блок с таблицей, аудирование — задания на слух, разговорная речь — больше фраз.\n\nЯзык: ${escapeHtml(s.langName)}. Сменить — напиши мне, например «учу английский» (встроенный банк уроков есть только для испанского, остальные языки — через модель).`,
     inline: [levelRow, focusRow, [{ text: "← Меню", callback_data: "learn:menu" }]],
   };
 }
@@ -204,7 +271,25 @@ export async function handleLearnCallback(ctx: LearnCtx, data: string, messageId
       return { handled: true };
     case "cards":
       if (session?.kind === "lesson") return { handled: true, toast: "Сначала закончи урок" };
-      await startCardsReview(ctx);
+      if (arg === "app") {
+        await ctx.sender.editButtons(ctx.chatId, messageId, null).catch(() => {});
+        await openCardsApp(ctx);
+      } else if (arg === "talk") {
+        await ctx.sender.editButtons(ctx.chatId, messageId, null).catch(() => {});
+        // 6 слов за разговор — больше не «вытащить» естественно.
+        const due = dueCards(ctx.chatId, Date.now(), 6);
+        if (!due.length) return cardsEntry(ctx), { handled: true };
+        await startTalk(ctx, "повторяем слова в деле", { reviewCards: due.map((c) => ({ id: c.id, front: c.front, back: c.back })) });
+      } else if (arg === "chat") {
+        await ctx.sender.editButtons(ctx.chatId, messageId, null).catch(() => {});
+        await startCardsReview(ctx);
+      } else await cardsEntry(ctx, messageId);
+      return { handled: true };
+    case "gen":
+      if (session?.kind === "lesson" || session?.kind === "talk") return { handled: true, toast: "Сначала закончи текущее" };
+      setLearnSession(ctx.chatId, { kind: "gen_prompt" });
+      await ctx.sender.editButtons(ctx.chatId, messageId, null).catch(() => {});
+      await ctx.sender.sendText(ctx.chatId, "По какой теме сгенерировать карточки? Напиши тему и, если хочешь, количество: «еда в ресторане, 20». По умолчанию 15.");
       return { handled: true };
     case "card": {
       if (session?.kind !== "cards") return { handled: true, toast: "Повторение уже закончено" };
@@ -250,6 +335,17 @@ export async function handleLearnText(ctx: LearnCtx, text: string): Promise<bool
   const session = getLearnSession(ctx.chatId);
   if (!session) return false;
   const t = text.trim();
+  if (session.kind === "gen_prompt") {
+    clearLearnSession(ctx.chatId);
+    if (!t || STOP_WORDS_RE.test(t)) {
+      await ctx.sender.sendText(ctx.chatId, "Ок, без генерации.", { inline: [[{ text: "← Меню", callback_data: "learn:menu" }]] });
+      return true;
+    }
+    const m = t.match(/^(.*?)[,;\s]+(\d{1,2})\s*(?:шт|карточек|штук)?\.?$/i);
+    const topic = (m ? m[1] : t).replace(/\s+карточ\w*$/i, "").trim() || t;
+    await generateCardsFlow(ctx, topic.slice(0, 80), m ? Number(m[2]) : 15);
+    return true;
+  }
   if (session.kind === "topic_prompt") {
     if (!t || STOP_WORDS_RE.test(t)) {
       clearLearnSession(ctx.chatId);

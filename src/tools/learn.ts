@@ -3,7 +3,7 @@
  * «добавь карточку hola — привет», «поговорим про еду») запускают те же сценарии, что кнопки.
  * Сценарий сам пишет в чат, поэтому ответ модели после него подавляется (suppressReply).
  */
-import { startLesson, startTalk, startCardsReview, learnMenuView, addCardManually } from "../learn/index.ts";
+import { startLesson, startTalk, cardsEntry, learnMenuView, addCardManually, generateCardsFlow } from "../learn/index.ts";
 import { cardStats } from "../learn/cards.ts";
 import { getLearnProgress, getLearnSettings, setLearnSettings } from "../learn/store.ts";
 import { LEVELS, TOPICS, type Level } from "../learn/types.ts";
@@ -49,7 +49,19 @@ export function buildLearnTools(): ToolDefinition[] {
         parameters: { type: "object", properties: {} },
       },
       handler: async (_args, ctx) => {
-        await startCardsReview(learnCtx(ctx));
+        await cardsEntry(learnCtx(ctx));
+        ctx.suppressReply = true;
+        return { started: true };
+      },
+    },
+    {
+      decl: {
+        name: "learn_generate_cards",
+        description: "Сгенерировать карточки (слово → перевод) по теме на изучаемом языке и добавить в колоду: «сгенерируй 20 карточек про еду», «карточки по теме работа».",
+        parameters: { type: "object", properties: { topic: { type: "string" }, count: { type: "integer", description: "3–40, по умолчанию 15" } }, required: ["topic"] },
+      },
+      handler: async (args, ctx) => {
+        await generateCardsFlow(learnCtx(ctx), argStr(args, "topic"), Number(args.count) || 15);
         ctx.suppressReply = true;
         return { started: true };
       },
