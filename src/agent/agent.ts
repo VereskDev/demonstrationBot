@@ -64,6 +64,7 @@ export async function runAgentTurn(deps: AgentDeps, input: AgentTurnInput): Prom
     outbox,
     incomingPhotoFileId: input.incomingPhotoFileId,
     changed: new Set(),
+    model: deps.model,
   };
 
   const userMessage: LlmMessage = { role: "user", text: input.text || (input.inline?.length ? "(без текста)" : ""), inline: input.inline };
@@ -95,8 +96,8 @@ export async function runAgentTurn(deps: AgentDeps, input: AgentTurnInput): Prom
 
   if (input.pendingMode) setPendingMode(input.chatId, null);
 
-  // Текст — потом файлы (как в Айман: файл мимо LLM, после реплики).
-  if (reply) await deps.sender.sendText(input.chatId, reply);
+  // Текст — потом файлы (как в Айман: файл мимо LLM, после реплики). Сценарий обучения пишет сам.
+  if (reply && !toolContext.suppressReply) await deps.sender.sendText(input.chatId, reply);
   for (const item of outbox) {
     try {
       if (item.kind === "photo") {

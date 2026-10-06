@@ -28,6 +28,10 @@ class FakeTg {
     this.sent.push({ kind: "doc", chatId, text: caption });
     return { messageId: this.sent.length };
   }
+  async sendVoice(chatId: string, _a: Buffer, opts: { caption?: string } = {}) {
+    this.sent.push({ kind: "voice", chatId, text: opts.caption ?? "" });
+    return { messageId: this.sent.length };
+  }
   async typing() {}
   async editText(_c: string, messageId: number, text: string, opts: SendOptions = {}) {
     this.edits.push({ messageId, text, inline: opts.inline });

@@ -116,7 +116,33 @@ export class TelegramApi implements Sender {
     return { messageId: res.result!.message_id };
   }
 
-  async typing(chatId: string, action: "typing" | "upload_photo" | "upload_document" = "typing"): Promise<void> {
+  async sendVoice(chatId: string, audio: Buffer, opts: SendOptions & { mime?: string; caption?: string; fileName?: string } = {}): Promise<SentMessage | null> {
+    const mime = opts.mime ?? "audio/mpeg";
+    const isVoiceable = /mpeg|mp3|ogg|opus|m4a|mp4/.test(mime);
+    const build = (field: string, name: string) => {
+      const form = new FormData();
+      form.append("chat_id", chatId);
+      if (opts.caption) {
+        form.append("caption", toTelegramHtml(capText(opts.caption, TELEGRAM_CAPTION_LIMIT)));
+        form.append("parse_mode", "HTML");
+      }
+      const markup = this.markup(opts);
+      if (markup) form.append("reply_markup", JSON.stringify(markup));
+      form.append(field, new Blob([new Uint8Array(audio)], { type: mime }), name);
+      return form;
+    };
+    const ext = mime.includes("wav") ? "wav" : mime.includes("ogg") ? "ogg" : "mp3";
+    const name = opts.fileName ?? `audio.${ext}`;
+    const attempts: Array<[string, string]> = isVoiceable ? [["sendVoice", "voice"], ["sendAudio", "audio"], ["sendDocument", "document"]] : [["sendAudio", "audio"], ["sendDocument", "document"]];
+    for (const [method, field] of attempts) {
+      const res = await this.call<{ message_id: number }>(method, build(field, name), 120_000);
+      if (res.ok) return { messageId: res.result!.message_id };
+      log.warn("tg", `${method} не прошёл: ${res.error_code} ${res.description}`);
+    }
+    return null;
+  }
+
+  async typing(chatId: string, action: "typing" | "upload_photo" | "upload_document" | "record_voice" | "upload_voice" = "typing"): Promise<void> {
     await this.call("sendChatAction", { chat_id: chatId, action }, 5_000).catch(() => {});
   }
 

@@ -23,6 +23,10 @@ import {
   chatTz,
 } from "../db/index.ts";
 import { simplePrompt } from "../llm/gemini.ts";
+import { addCardManually, handleLearnCallback, handleLearnText, hasActiveLearnSession, learnMenuView, parseCardCommand, type LearnCtx } from "../learn/index.ts";
+import { clearLearnSession, getLearnSession } from "../learn/store.ts";
+import { endTalk } from "../learn/conversation.ts";
+import { quitLesson } from "../learn/lesson.ts";
 import { log, errMsg } from "../runtime/log.ts";
 import { formatDateTime, isValidZone, nextOccurrence, nowIn } from "../time.ts";
 import { agendaView, HELP_TEXT, notesView, noteView, remindersView, tasksView } from "../views.ts";
@@ -102,8 +106,23 @@ async function handleMessage(deps: HandlerDeps, m: IncomingMessage): Promise<voi
         return sendView(deps, chatId, remindersView(chatId, tz));
       case "/new":
         clearHistory(chatId);
+        clearLearnSession(chatId);
         await deps.tg.sendText(chatId, "Начинаем с чистого листа. Заметки, задачи и напоминания на месте.");
         return;
+      case "/learn":
+      case "/es":
+        return sendView(deps, chatId, learnMenuView(chatId), true);
+      case "/stop": {
+        const session = getLearnSession(chatId);
+        const lctx = learnCtx(deps, chatId, tz);
+        if (session?.kind === "talk") await endTalk(lctx, session);
+        else if (session?.kind === "lesson") await quitLesson(lctx, session);
+        else {
+          clearLearnSession(chatId);
+          await deps.tg.sendText(chatId, "Активного урока или разговора нет.");
+        }
+        return;
+      }
       case "/id":
         await deps.tg.sendText(chatId, `Твой Telegram ID: ${m.userId}\nЧат: ${chatId}`);
         return;
@@ -137,6 +156,8 @@ async function handleMessage(deps: HandlerDeps, m: IncomingMessage): Promise<voi
     case BTN.help:
       await deps.tg.sendText(chatId, HELP_TEXT);
       return;
+    case BTN.learn:
+      return sendView(deps, chatId, learnMenuView(chatId), true);
     case BTN.draw:
       setPendingMode(chatId, "draw");
       await deps.tg.sendText(chatId, "Опиши, что нарисовать: сюжет, стиль, настроение. Для открытки добавь текст надписи — например: «открытка маме, акварель, цветы, надпись: С днём рождения!»");
@@ -185,6 +206,17 @@ async function handleMessage(deps: HandlerDeps, m: IncomingMessage): Promise<voi
   }
   if (!userText && !inline.length) return;
 
+  // Режим обучения: идёт урок/разговор/ввод темы — текст (в т.ч. расшифрованный голос) уходит туда.
+  if (userText && hasActiveLearnSession(chatId)) {
+    if (await handleLearnText(learnCtx(deps, chatId, tz), userText)) return;
+  }
+  const card = userText ? parseCardCommand(userText) : null;
+  if (card) {
+    const r = addCardManually(chatId, card.front, card.back);
+    await deps.tg.sendText(chatId, r.created ? `🃏 Карточка добавлена: ${card.front} — ${card.back}. Всего ${r.total}.` : `Такая карточка уже есть (всего ${r.total}).`);
+    return;
+  }
+
   const chat = getChat(chatId);
   await runAgentTurn(deps, {
     chatId,
@@ -215,8 +247,12 @@ function escape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-async function sendView(deps: HandlerDeps, chatId: string, view: { text: string; inline: Array<Array<{ text: string; callback_data?: string }>> }): Promise<void> {
-  await deps.tg.sendText(chatId, view.text, { inline: view.inline.filter((r) => r.length) });
+async function sendView(deps: HandlerDeps, chatId: string, view: { text: string; inline: Array<Array<{ text: string; callback_data?: string }>> }, html = false): Promise<void> {
+  await deps.tg.sendText(chatId, view.text, { inline: view.inline.filter((r) => r.length), html });
+}
+
+function learnCtx(deps: HandlerDeps, chatId: string, tz: string): LearnCtx {
+  return { chatId, sender: deps.tg, model: deps.model, tz };
 }
 
 async function editView(deps: HandlerDeps, chatId: string, messageId: number, view: { text: string; inline: Array<Array<{ text: string; callback_data?: string }>> }): Promise<void> {
@@ -229,6 +265,11 @@ async function handleCallback(deps: HandlerDeps, cb: IncomingCallback): Promise<
   const tz = chatTz(chatId);
   const [ns, action, a, b] = cb.data.split(":");
   try {
+    if (ns === "learn") {
+      const r = await handleLearnCallback(learnCtx(deps, chatId, tz), cb.data, cb.messageId);
+      await deps.tg.answerCallback(cb.callbackId, r.toast);
+      return;
+    }
     if (ns === "rem") {
       const id = Number(a);
       const r = getReminder(chatId, id);

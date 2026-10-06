@@ -68,6 +68,12 @@ export async function runOrchestrator(params: {
     const toolMsg: LlmMessage = { role: "tool", toolResults: results };
     messages.push(toolMsg);
     appended.push(toolMsg);
+    // Инструмент сам всё написал в чат (урок, разговор) — итоговый текст модели не нужен,
+    // лишние 1–3 вызова (живой прогон 06.10: +12 с пустых ответов) не делаем.
+    if (toolContext.suppressReply) {
+      appended.push({ role: "model", text: "(сценарий запущен в чате)" });
+      return { reply: "", appended, toolTrace: trace, steps: step + 1 };
+    }
   }
 
   // Шаги кончились: заставляем модель подвести итог текстом.

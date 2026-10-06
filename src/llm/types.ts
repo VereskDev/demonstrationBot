@@ -52,6 +52,10 @@ export interface GenerateInput {
   forceTools?: string[];
   /** Запретить инструменты на этом шаге: модель обязана ответить текстом. */
   noTools?: boolean;
+  /** Ответ строго JSON (responseMimeType application/json). */
+  json?: boolean;
+  /** Температура (по умолчанию модели). */
+  temperature?: number;
 }
 
 export interface ModelTransport {

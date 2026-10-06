@@ -82,6 +82,8 @@ export class GeminiModelTransport implements ModelTransport {
     if (!isFast && thinking && thinking !== "none" && /flash|pro/.test(model) && !/lite/.test(model)) {
       gen.thinkingConfig = { thinkingLevel: thinking };
     }
+    if (input.json) gen.responseMimeType = "application/json";
+    if (typeof input.temperature === "number") gen.temperature = input.temperature;
     if (Object.keys(gen).length) body.generationConfig = gen;
     return body;
   }
@@ -216,11 +218,11 @@ export class GeminiModelTransport implements ModelTransport {
   }
 }
 
-/** Простой вызов без инструментов (расшифровка голосового, описание фото). */
+/** Простой вызов без инструментов (расшифровка голосового, описание фото, генерация JSON). */
 export async function simplePrompt(
   model: ModelTransport,
   prompt: string,
-  opts: { inline?: LlmMessage["inline"]; system?: string; fast?: boolean } = {},
+  opts: { inline?: LlmMessage["inline"]; system?: string; fast?: boolean; json?: boolean; temperature?: number } = {},
 ): Promise<string> {
   const turn = await model.generate({
     system: opts.system ?? "",
@@ -228,6 +230,16 @@ export async function simplePrompt(
     tools: [],
     fast: opts.fast ?? true,
     noTools: true,
+    json: opts.json,
+    temperature: opts.temperature,
   });
   return String(turn.text ?? "").trim();
+}
+
+/** JSON от модели: срезаем ```-обёртку, если модель всё же её поставила. */
+export function parseModelJson<T = unknown>(text: string): T {
+  const t = String(text ?? "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  return JSON.parse(start >= 0 && end > start ? t.slice(start, end + 1) : t) as T;
 }

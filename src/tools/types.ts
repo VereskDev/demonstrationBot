@@ -4,6 +4,7 @@
  * модель получает текст ошибки и продолжает.
  */
 import type { Sender } from "../telegram/sender.ts";
+import type { ModelTransport } from "../llm/types.ts";
 
 /** JSON-схема параметров, совместимая с Gemini functionDeclarations. */
 export interface JsonSchema {
@@ -45,6 +46,10 @@ export interface ToolContext {
   incomingPhotoFileId?: string;
   /** Что инструменты поменяли — чтобы движок понимал, нужен ли пересчёт планировщика и т.п. */
   changed: Set<"notes" | "tasks" | "reminders" | "facts" | "settings">;
+  /** Модель — инструментам, которые сами генерируют контент (уроки, разговор). */
+  model?: ModelTransport;
+  /** Инструмент сам всё написал в чат — текстовый ответ модели не отправлять. */
+  suppressReply?: boolean;
 }
 
 export type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>;

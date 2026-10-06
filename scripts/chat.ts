@@ -14,6 +14,7 @@ import { GeminiModelTransport } from "../src/llm/gemini.ts";
 import type { InlineButton, SendOptions, Sender, SentMessage } from "../src/telegram/sender.ts";
 import { buildToolset } from "../src/tools/registry.ts";
 import { startReminderScheduler } from "../src/scheduler/reminders.ts";
+import { addCardManually, handleLearnText, hasActiveLearnSession, parseCardCommand } from "../src/learn/index.ts";
 
 process.env.ASSISTANT_DB_PATH ??= path.join(config.dataDir, "chat-cli.sqlite");
 fs.mkdirSync(path.join(config.dataDir, "out"), { recursive: true });
@@ -37,6 +38,13 @@ class ConsoleSender implements Sender {
     console.log(`\n📎 файл → ${Buffer.isBuffer(doc) ? file : doc}${caption ? `\n   ${caption}` : ""}`);
     return { messageId: ++this.n };
   }
+  async sendVoice(_chatId: string, audio: Buffer, opts?: { mime?: string; caption?: string }): Promise<SentMessage | null> {
+    const ext = opts?.mime?.includes("wav") ? "wav" : "mp3";
+    const file = path.join(config.dataDir, "out", `${Date.now()}-voice.${ext}`);
+    fs.writeFileSync(file, audio);
+    console.log(`\n🔊 голосовое → ${file} (${audio.length}B)${opts?.caption ? `\n   ${opts.caption}` : ""}`);
+    return { messageId: ++this.n };
+  }
   async typing(): Promise<void> {}
   async editText(_c: string, _m: number, text: string): Promise<void> {
     console.log(`\n✏️ ${text}`);
@@ -52,9 +60,19 @@ const scheduler = startReminderScheduler(sender, 5_000);
 
 async function turn(text: string): Promise<void> {
   const t0 = Date.now();
+  // Та же маршрутизация, что в Telegram: активный урок/разговор и «карточка: …» идут мимо агента.
+  if (hasActiveLearnSession(chatId) && (await handleLearnText({ chatId, sender, model: deps.model, tz: config.defaultTimezone }, text))) {
+    console.log(`   (${Date.now() - t0}мс, режим обучения)`);
+    return;
+  }
+  const card = parseCardCommand(text);
+  if (card) {
+    const r = addCardManually(chatId, card.front, card.back);
+    console.log(`\n🤖 ${r.created ? `🃏 Карточка добавлена: ${card.front} — ${card.back}. Всего ${r.total}.` : "Такая карточка уже есть."}`);
+    return;
+  }
   const r = await runAgentTurn(deps, { chatId, text, ownerName: "Дима" });
   console.log(`   (${r.ms}мс, инструменты: ${r.toolNames.join(", ") || "—"})`);
-  void t0;
 }
 
 const args = process.argv.slice(2).filter((a) => a !== "--");
