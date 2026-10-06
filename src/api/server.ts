@@ -103,7 +103,7 @@ export function createApiServer(deps: ApiDeps): http.Server {
   });
 
   // ── заметки ──
-  const noteOut = (c: Ctx) => (x: ReturnType<typeof listNotes>[number]) => ({ id: x.id, text: x.text, tags: x.tags ? x.tags.split(",") : [], hasPhoto: Boolean(x.photo_file_id), created: formatDateTime(x.created_at, c.tz, c.now), createdAt: x.created_at });
+  const noteOut = (c: Ctx) => (x: ReturnType<typeof listNotes>[number]) => ({ id: x.id, text: x.text, tags: x.tags ? x.tags.split(",") : [], hasPhoto: Boolean(x.photo_file_id), hasFile: Boolean(x.file_id), fileName: x.file_name ?? undefined, created: formatDateTime(x.created_at, c.tz, c.now), createdAt: x.created_at });
   add("GET", "/api/notes", (c) => {
     const notes = listNotes(c.chatId, { query: c.query.get("q") || undefined, tag: c.query.get("tag") || undefined, limit: n(c.query.get("limit")) ?? 30, offset: n(c.query.get("offset")) ?? 0 });
     return { notes: notes.map(noteOut(c)), total: countNotes(c.chatId) };

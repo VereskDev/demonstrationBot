@@ -23,6 +23,8 @@ import {
   chatTz,
 } from "../db/index.ts";
 import { simplePrompt } from "../llm/gemini.ts";
+import { extractOfficeText, officeKind } from "../files/office.ts";
+import { addNote } from "../db/index.ts";
 import { addCardManually, applyWebAppResults, handleLearnCallback, handleLearnText, hasActiveLearnSession, learnMenuView, parseCardCommand, type LearnCtx } from "../learn/index.ts";
 import { parseWebAppResults } from "../learn/cardsGen.ts";
 import { cardStats } from "../learn/cards.ts";
@@ -226,22 +228,35 @@ async function handleMessage(deps: HandlerDeps, m: IncomingMessage): Promise<voi
     if (file) inline.push({ mimeType: file.contentType.startsWith("image/") ? file.contentType : "image/jpeg", data: file.bytes.toString("base64") });
     if (!userText) userText = "Вот фото.";
   }
+  let incomingFile: { fileId: string; fileName: string; mime: string } | undefined;
   if (m.documentFileId && !m.photoFileId) {
-    const mime = m.documentMime ?? "";
-    if (mime.startsWith("image/")) {
-      const file = await deps.tg.downloadFile(m.documentFileId);
-      if (file) inline.push({ mimeType: mime, data: file.bytes.toString("base64") });
-    } else if (/^text\/|json|csv|markdown/.test(mime)) {
-      const file = await deps.tg.downloadFile(m.documentFileId);
-      if (file && file.bytes.length < 200_000) userText = `${userText}\n\n[файл ${m.documentName}]\n${file.bytes.toString("utf8").slice(0, 60_000)}`.trim();
+    const mime = m.documentMime ?? "application/octet-stream";
+    const fileName = m.documentName || "файл";
+    incomingFile = { fileId: m.documentFileId, fileName, mime };
+    // Любой файл сохраняем заметкой с file_id: «скинь презу, которую я присылал» → find_notes → get_note.
+    let extracted = "";
+    let readNote = "";
+    const office = officeKind(mime, fileName);
+    const file = await deps.tg.downloadFile(m.documentFileId);
+    if (!file) readNote = "скачать не удалось (Telegram отдаёт ботам файлы до 20 МБ)";
+    else if (mime.startsWith("image/")) inline.push({ mimeType: mime, data: file.bytes.toString("base64") });
+    else if (office) {
+      try {
+        const t = extractOfficeText(file.bytes, office);
+        extracted = t.text;
+        readNote = `${office}, ${t.parts} ${office === "pptx" ? "слайдов" : office === "xlsx" ? "листов" : "часть"}, ${extracted.length} зн. текста`;
+      } catch (e) {
+        readNote = `не удалось разобрать: ${errMsg(e)}`;
+      }
+    } else if (/^text\/|json|csv|markdown|xml|yaml/.test(mime) || /\.(txt|md|csv|json|ya?ml|log)$/i.test(fileName)) {
+      extracted = file.bytes.toString("utf8").slice(0, 60_000);
+      readNote = `текст, ${extracted.length} зн.`;
     } else if (mime === "application/pdf") {
-      const file = await deps.tg.downloadFile(m.documentFileId);
-      if (file && file.bytes.length < 15_000_000) inline.push({ mimeType: "application/pdf", data: file.bytes.toString("base64") });
-    } else {
-      await deps.tg.sendText(chatId, `Файлы «${mime || "такого типа"}» пока не читаю. Картинки, PDF и текстовые — могу.`);
-      return;
-    }
-    if (!userText) userText = `Файл ${m.documentName ?? ""}`.trim();
+      if (file.bytes.length < 15_000_000) inline.push({ mimeType: "application/pdf", data: file.bytes.toString("base64") });
+      readNote = "PDF передан модели целиком";
+    } else readNote = `тип ${mime} не читаю, но файл сохранён и могу переслать`;
+    const saved = addNote(chatId, `📎 ${fileName}${text ? `\n${text}` : ""}${extracted ? `\n\n${extracted.slice(0, 4000)}` : ""}`, ["файлы"], { fileId: m.documentFileId, fileName, fileMime: mime });
+    userText = `${text}\n\n[система] Пользователь прислал файл «${fileName}» (${mime}). Он уже сохранён как заметка №${saved.id} — повторно add_note не нужен; переслать его можно через get_note(${saved.id}). Чтение: ${readNote}.${extracted ? `\nСодержимое:\n${extracted}` : ""}`.trim();
   }
   if (!userText && !inline.length) return;
 
@@ -262,6 +277,7 @@ async function handleMessage(deps: HandlerDeps, m: IncomingMessage): Promise<voi
     text: userText,
     inline: inline.length ? inline : undefined,
     incomingPhotoFileId: m.photoFileId,
+    incomingFile,
     ownerName: m.name || chat?.name,
     pendingMode: chat?.pending_mode ?? null,
   });
@@ -389,6 +405,16 @@ async function handleCallback(deps: HandlerDeps, cb: IncomingCallback): Promise<
         await deps.tg.answerCallback(cb.callbackId);
         if (n.photo_file_id) await deps.tg.sendPhoto(chatId, n.photo_file_id, noteView(n, tz).text, { inline: noteView(n, tz).inline });
         else await editView(deps, chatId, cb.messageId, noteView(n, tz));
+        return;
+      }
+      if (action === "file") {
+        const n = getNote(chatId, Number(a));
+        if (!n?.file_id) {
+          await deps.tg.answerCallback(cb.callbackId, "Файла в заметке нет");
+          return;
+        }
+        await deps.tg.answerCallback(cb.callbackId, "Отправляю");
+        await deps.tg.sendDocument(chatId, n.file_id, n.file_name ?? "file", n.file_name ?? "");
         return;
       }
       if (action === "del") {

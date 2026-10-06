@@ -23,6 +23,7 @@ export interface AgentTurnInput {
   /** Фото/аудио к сообщению (в историю не сохраняются). */
   inline?: LlmMessage["inline"];
   incomingPhotoFileId?: string;
+  incomingFile?: { fileId: string; fileName: string; mime: string };
   ownerName?: string | null;
   pendingMode?: string | null;
 }
@@ -63,6 +64,7 @@ export async function runAgentTurn(deps: AgentDeps, input: AgentTurnInput): Prom
     sender: deps.sender,
     outbox,
     incomingPhotoFileId: input.incomingPhotoFileId,
+    incomingFile: input.incomingFile,
     changed: new Set(),
     model: deps.model,
   };

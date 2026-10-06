@@ -44,6 +44,8 @@ export interface ToolContext {
   outbox: OutboxItem[];
   /** file_id фото, присланного в этом же сообщении (для заметки с фото). */
   incomingPhotoFileId?: string;
+  /** Документ из этого же сообщения (pptx, pdf…): прикрепится к заметке, если модель её создаст. */
+  incomingFile?: { fileId: string; fileName: string; mime: string };
   /** Что инструменты поменяли — чтобы движок понимал, нужен ли пересчёт планировщика и т.п. */
   changed: Set<"notes" | "tasks" | "reminders" | "facts" | "settings">;
   /** Модель — инструментам, которые сами генерируют контент (уроки, разговор). */

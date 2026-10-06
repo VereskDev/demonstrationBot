@@ -16,7 +16,8 @@ export function shortText(s: string, max = 60): string {
 // ───────────────────────── заметки ─────────────────────────
 export function noteLine(n: NoteRow, tz: string, now: number): string {
   const tags = n.tags ? " " + n.tags.split(",").map((t) => `#${t}`).join(" ") : "";
-  return `${n.photo_file_id ? ICON.photo + " " : ""}${shortText(n.text, 70)}${tags} · ${formatDateTime(n.created_at, tz, now)}`;
+  const icon = n.photo_file_id ? ICON.photo + " " : n.file_id && !n.text.startsWith("📎") ? "📎 " : "";
+  return `${icon}${shortText(n.text, 70)}${tags} · ${formatDateTime(n.created_at, tz, now)}`;
 }
 
 export function notesView(chatId: string, tz: string, opts: { query?: string; offset?: number; limit?: number } = {}): { text: string; inline: InlineButton[][] } {
@@ -47,8 +48,11 @@ export function notesView(chatId: string, tz: string, opts: { query?: string; of
 
 export function noteView(n: NoteRow, tz: string): { text: string; inline: InlineButton[][] } {
   const tags = n.tags ? "\n" + n.tags.split(",").map((t) => `#${t}`).join(" ") : "";
-  const text = `${ICON.note} Заметка №${n.id} · ${formatDateTime(n.created_at, tz)}\n\n${n.text}${tags}`;
-  return { text, inline: [[{ text: "🗑 Удалить", callback_data: `note:del:${n.id}` }, { text: "← К списку", callback_data: "note:list:0" }]] };
+  const text = `${ICON.note} Заметка №${n.id} · ${formatDateTime(n.created_at, tz)}\n\n${shortText(n.text, 3500)}${tags}`;
+  const row: InlineButton[] = [];
+  if (n.file_id) row.push({ text: "📎 Прислать файл", callback_data: `note:file:${n.id}` });
+  row.push({ text: "🗑 Удалить", callback_data: `note:del:${n.id}` }, { text: "← К списку", callback_data: "note:list:0" });
+  return { text, inline: [row] };
 }
 
 // ───────────────────────── задачи ─────────────────────────

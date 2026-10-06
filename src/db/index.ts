@@ -89,6 +89,18 @@ function migrate(d: DatabaseSync): void {
       created_at INTEGER NOT NULL
     );
   `);
+  // Присланные файлы (pptx, docx, pdf…) живут в заметках по file_id Telegram — пересылаются по просьбе.
+  ensureColumns(d, "notes", [
+    ["file_id", "TEXT"],
+    ["file_name", "TEXT"],
+    ["file_mime", "TEXT"],
+  ]);
+}
+
+/** Добавочные колонки поверх старой схемы (ALTER TABLE, если колонки ещё нет). */
+function ensureColumns(d: DatabaseSync, table: string, cols: Array<[string, string]>): void {
+  const have = new Set((d.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name));
+  for (const [name, ddl] of cols) if (!have.has(name)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${ddl}`);
 }
 
 export function fold(s: string): string {
@@ -181,21 +193,34 @@ export interface NoteRow {
   text: string;
   tags: string;
   photo_file_id: string | null;
+  file_id: string | null;
+  file_name: string | null;
+  file_mime: string | null;
   created_at: number;
   updated_at: number;
 }
 
-export function addNote(chatId: string, text: string, tags: string[] = [], photoFileId?: string): NoteRow {
+export interface NoteAttachment {
+  photoFileId?: string;
+  fileId?: string;
+  fileName?: string;
+  fileMime?: string;
+}
+
+const NOTE_COLS = "id, chat_id, text, tags, photo_file_id, file_id, file_name, file_mime, created_at, updated_at";
+
+export function addNote(chatId: string, text: string, tags: string[] = [], attachment: NoteAttachment | string = {}): NoteRow {
   const now = Date.now();
+  const att: NoteAttachment = typeof attachment === "string" ? { photoFileId: attachment } : attachment;
   const tagStr = tags.map((t) => t.replace(/^#/, "").trim()).filter(Boolean).join(",");
   const res = getDb()
-    .prepare("INSERT INTO notes(chat_id, text, search, tags, photo_file_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(chatId, text, fold(`${text} ${tagStr}`), tagStr, photoFileId ?? null, now, now);
+    .prepare("INSERT INTO notes(chat_id, text, search, tags, photo_file_id, file_id, file_name, file_mime, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(chatId, text, fold(`${text} ${tagStr} ${att.fileName ?? ""}`), tagStr, att.photoFileId ?? null, att.fileId ?? null, att.fileName ?? null, att.fileMime ?? null, now, now);
   return getNote(chatId, Number(res.lastInsertRowid))!;
 }
 
 export function getNote(chatId: string, id: number): NoteRow | null {
-  return (getDb().prepare("SELECT id, chat_id, text, tags, photo_file_id, created_at, updated_at FROM notes WHERE chat_id = ? AND id = ?").get(chatId, id) as NoteRow | undefined) ?? null;
+  return (getDb().prepare(`SELECT ${NOTE_COLS} FROM notes WHERE chat_id = ? AND id = ?`).get(chatId, id) as NoteRow | undefined) ?? null;
 }
 
 export function listNotes(chatId: string, opts: { query?: string; tag?: string; limit?: number; offset?: number } = {}): NoteRow[] {
@@ -215,7 +240,7 @@ export function listNotes(chatId: string, opts: { query?: string; tag?: string; 
   }
   params.push(limit, offset);
   return getDb()
-    .prepare(`SELECT id, chat_id, text, tags, photo_file_id, created_at, updated_at FROM notes WHERE ${where.join(" AND ")} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .prepare(`SELECT ${NOTE_COLS} FROM notes WHERE ${where.join(" AND ")} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
     .all(...(params as never[])) as unknown as NoteRow[];
 }
 
