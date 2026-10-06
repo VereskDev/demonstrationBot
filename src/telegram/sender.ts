@@ -1,0 +1,34 @@
+/**
+ * Что умеет «канал» с точки зрения движка. Реализации: настоящий Telegram (api.ts) и консоль
+ * (scripts/chat.ts) — агент и инструменты от конкретного канала не зависят.
+ */
+export interface InlineButton {
+  text: string;
+  callback_data?: string;
+  url?: string;
+}
+
+export interface SendOptions {
+  /** Inline-кнопки под сообщением (ряды). */
+  inline?: InlineButton[][];
+  /** Обычная клавиатура (ряды текстов). */
+  keyboard?: string[][];
+  /** Отдать HTML как есть (без форматирования markdown-лайт). */
+  html?: boolean;
+  /** Не показывать превью ссылок. */
+  noPreview?: boolean;
+  replyTo?: number;
+}
+
+export interface SentMessage {
+  messageId: number;
+}
+
+export interface Sender {
+  sendText(chatId: string, text: string, opts?: SendOptions): Promise<SentMessage | null>;
+  sendPhoto(chatId: string, photo: Buffer | string, caption?: string, opts?: SendOptions & { fileName?: string }): Promise<SentMessage | null>;
+  sendDocument(chatId: string, doc: Buffer | string, fileName: string, caption?: string, opts?: SendOptions & { mime?: string }): Promise<SentMessage | null>;
+  typing(chatId: string, action?: "typing" | "upload_photo" | "upload_document"): Promise<void>;
+  editText(chatId: string, messageId: number, text: string, opts?: SendOptions): Promise<void>;
+  editButtons(chatId: string, messageId: number, inline: InlineButton[][] | null): Promise<void>;
+}

@@ -1,0 +1,29 @@
+{
+  "name": "assistant-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Личный помощник в Telegram: заметки, задачи со структурой, напоминания, картинки, открытки и схемы. Движок перенесён из бота Айман.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "tsx --disable-warning=ExperimentalWarning src/main.ts",
+    "dev": "tsx watch --disable-warning=ExperimentalWarning src/main.ts",
+    "chat": "tsx --disable-warning=ExperimentalWarning scripts/chat.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@viz-js/viz": "^3.31.0",
+    "luxon": "^3.7.2"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.6",
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
