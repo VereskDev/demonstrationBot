@@ -3,7 +3,8 @@
  *   npm start
  */
 import { assertConfig, config } from "./config.ts";
-import { getDb } from "./db/index.ts";
+import { getDb, listChats } from "./db/index.ts";
+import { refreshMenuButton } from "./learn/menuButton.ts";
 import { GeminiModelTransport } from "./llm/gemini.ts";
 import { installGracefulShutdown } from "./runtime/inflight.ts";
 import { log } from "./runtime/log.ts";
@@ -23,9 +24,11 @@ async function main(): Promise<void> {
   await tg.deleteWebhook();
   await tg.setCommands(BOT_COMMANDS);
 
-  const deps = { tg, sender: tg, model: new GeminiModelTransport(), tools: buildToolset() };
+  const deps = { tg, sender: tg, model: new GeminiModelTransport(), tools: buildToolset(), botUsername: me.username ?? "" };
   const scheduler = startReminderScheduler(tg, config.schedulerTickMs);
   const polling = startPolling(tg, (u) => handleUpdate(deps, u));
+  // Кнопка меню с Mini App — актуальная колода для каждого известного чата (владельца).
+  if (deps.botUsername) for (const chat of listChats()) void refreshMenuButton(tg, chat.chat_id, deps.botUsername, true);
 
   installGracefulShutdown(config.shutdownGraceMs, () => {
     polling.stop();

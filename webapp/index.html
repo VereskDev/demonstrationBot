@@ -84,8 +84,11 @@
   } catch (e) { deck = null; }
 
   if (!deck || !deck.cards || !deck.cards.length) {
-    $('stage').innerHTML = '<div class="empty">Колода не передана.<br>Открой тренажёр из бота: «🗣 Язык» → «Карточки» → «В приложении».</div>';
+    $('stage').innerHTML = deck && deck.m
+      ? '<div class="empty">🎉 Все карточки повторены.<br>Новые появятся по расписанию или из уроков — бот обновит эту кнопку сам.</div>'
+      : '<div class="empty">Колода не передана.<br>Открой тренажёр из бота: «🗣 Язык» → «Карточки» → «В приложении».</div>';
     $('actions').style.display = 'none'; $('hint').textContent = '';
+    if (tg && tg.MainButton) { tg.MainButton.setText('Закрыть'); tg.MainButton.show(); tg.MainButton.onClick(function () { tg.close(); }); }
     return;
   }
 
@@ -199,14 +202,35 @@
       (missed.length ? '<div class="list">' + missed.map(function (c) { return '<div><span>' + esc(c.f) + '</span><span>' + esc(c.b) + '</span></div>'; }).join('') + '</div>' : '<div class="small">Все карточки на месте 🎉</div>') +
       '</div>';
     $('actions').innerHTML = '';
-    $('hint').textContent = tg && tg.sendData ? 'Нажми кнопку внизу, чтобы бот записал результат.' : 'Открыто вне Telegram — результаты не отправляются.';
+    var inTelegram = tg && tg.initData;
+    $('hint').textContent = inTelegram ? 'Нажми кнопку внизу, чтобы бот записал результат.' : 'Открыто вне Telegram — результаты не отправляются.';
     if (tg && tg.MainButton) {
       tg.MainButton.setText('Отправить боту');
       tg.MainButton.show();
       tg.MainButton.onClick(function () {
-        try { tg.sendData(JSON.stringify({ type: 'cards', results: results })); } catch (e) { $('hint').textContent = 'Не удалось отправить: ' + e; }
+        try {
+          if (deck.m && deck.d && deck.u) {
+            // Открыто кнопкой меню: sendData тут недоступен, итог едет /start-ссылкой (две битовые маски по порядку колоды).
+            tg.openTelegramLink('https://t.me/' + deck.u + '?start=' + startPayload());
+            setTimeout(function () { tg.close(); }, 300);
+          } else {
+            tg.sendData(JSON.stringify({ type: 'cards', results: results }));
+          }
+        } catch (e) { $('hint').textContent = 'Не удалось отправить: ' + e; }
       });
     }
+  }
+
+  function startPayload() {
+    var n = cards.length, answered = new Uint8Array(Math.ceil(n / 8)), okMask = new Uint8Array(Math.ceil(n / 8));
+    cards.forEach(function (c, idx) {
+      var r = results.find(function (x) { return x.i === c.i; });
+      if (!r) return;
+      answered[idx >> 3] |= 1 << (idx & 7);
+      if (r.ok) okMask[idx >> 3] |= 1 << (idx & 7);
+    });
+    var b64 = function (u8) { var s = ''; for (var k = 0; k < u8.length; k++) s += String.fromCharCode(u8[k]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+    return 'cr_' + deck.d.toString(36) + '_' + b64(answered) + '_' + b64(okMask);
   }
 
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }

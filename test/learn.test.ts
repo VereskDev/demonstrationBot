@@ -81,6 +81,23 @@ describe("карточки Лейтнера", () => {
     expect(addCard(chat, "mesa", "столик").created).toBe(false);
     expect(cardStats(chat).total).toBe(1);
   });
+  it("результаты из /start-ссылки Mini App: маски по порядку колоды", async () => {
+    const { parseStartResults, encodeDeck } = await import("../src/learn/cardsGen.ts");
+    const { createAppDeck } = await import("../src/learn/store.ts");
+    const { applyStartResults } = await import("../src/learn/menuButton.ts");
+    const a = addCard(chat, "uno", "один").card;
+    const b = addCard(chat, "dos", "два").card;
+    const c = addCard(chat, "tres", "три").card;
+    const deckId = createAppDeck(chat, [a.id, b.id, c.id]);
+    // отвечены 1-я и 3-я (биты 0 и 2 → 0b101 = 5 → base64url "BQ"), верна только 1-я (0b001 = 1 → "AQ")
+    const payload = `cr_${deckId.toString(36)}_BQ_AQ`;
+    expect(parseStartResults(payload)?.answered.slice(0, 3)).toEqual([true, false, true]);
+    const r = applyStartResults(chat, payload);
+    expect(r).toEqual({ known: 1, unknown: 1 });
+    expect(dueCards(chat, Date.now()).map((x) => x.id)).toEqual([b.id]); // a → коробка 2 (завтра), c → отложена на 10 мин
+    expect(applyStartResults("other", payload)).toBeNull();
+    expect(encodeDeck([a], "es", { deckId, bot: "demo_bot", menu: true }).length).toBeGreaterThan(20);
+  });
   it("разбор команды «карточка: …»", () => {
     expect(parseCardCommand("карточка: el pan — хлеб")).toEqual({ front: "el pan", back: "хлеб" });
     expect(parseCardCommand("Карточка: hola - привет")).toEqual({ front: "hola", back: "привет" });

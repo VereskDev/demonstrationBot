@@ -26,6 +26,7 @@ import { simplePrompt } from "../llm/gemini.ts";
 import { addCardManually, applyWebAppResults, handleLearnCallback, handleLearnText, hasActiveLearnSession, learnMenuView, parseCardCommand, type LearnCtx } from "../learn/index.ts";
 import { parseWebAppResults } from "../learn/cardsGen.ts";
 import { cardStats } from "../learn/cards.ts";
+import { applyStartResults, refreshMenuButton } from "../learn/menuButton.ts";
 import { clearLearnSession, getLearnSession } from "../learn/store.ts";
 import { endTalk } from "../learn/conversation.ts";
 import { quitLesson } from "../learn/lesson.ts";
@@ -38,6 +39,8 @@ import { normalizeUpdate, type IncomingCallback, type IncomingMessage } from "./
 
 export interface HandlerDeps extends AgentDeps {
   tg: TelegramApi;
+  /** username бота — для ссылок из Mini App; пусто (тесты) — кнопка меню не трогается. */
+  botUsername?: string;
 }
 
 const OWNER_KEY = "owner_id";
@@ -65,12 +68,17 @@ export async function handleUpdate(deps: HandlerDeps, update: Record<string, unk
     return;
   }
   ensureChat(inc.chatId, inc.userId, inc.name);
-  if (inc.kind === "callback") return handleCallback(deps, inc);
-  if (access === "claimed") {
-    await sendWelcome(deps, inc.chatId, inc.name);
-    if (/^\/start\b/i.test(inc.text)) return;
+  try {
+    if (inc.kind === "callback") return await handleCallback(deps, inc);
+    if (access === "claimed") {
+      await sendWelcome(deps, inc.chatId, inc.name);
+      if (/^\/start\s*$/i.test(inc.text)) return;
+    }
+    await handleMessage(deps, inc);
+  } finally {
+    // Колода могла измениться — кнопка меню с Mini App получает свежий URL (дёшево: API зовётся только при изменении).
+    if (deps.botUsername) void refreshMenuButton(deps.tg, inc.chatId, deps.botUsername);
   }
-  return handleMessage(deps, inc);
 }
 
 async function sendWelcome(deps: HandlerDeps, chatId: string, name: string): Promise<void> {
@@ -110,8 +118,20 @@ async function handleMessage(deps: HandlerDeps, m: IncomingMessage): Promise<voi
     const cmd = cmdRaw.replace(/@\w+$/, "").toLowerCase();
     const arg = rest.join(" ").trim();
     switch (cmd) {
-      case "/start":
+      case "/start": {
+        // Итоги из Mini App, открытого кнопкой меню: /start cr_<колода>_<маски>.
+        if (arg.startsWith("cr_")) {
+          const r = applyStartResults(chatId, arg);
+          if (!r) {
+            await deps.tg.sendText(chatId, "Эта колода уже устарела — открой тренажёр заново.", { keyboard: MAIN_KEYBOARD });
+            return;
+          }
+          const c = cardStats(chatId);
+          await deps.tg.sendText(chatId, `🃏 Записал: помню ${r.known}, не помню ${r.unknown}.${c.due ? ` Ещё к повторению: ${c.due}.` : " На сегодня всё."}`, { keyboard: MAIN_KEYBOARD });
+          return;
+        }
         return sendWelcome(deps, chatId, m.name);
+      }
       case "/help":
         await deps.tg.sendText(chatId, HELP_TEXT, { keyboard: MAIN_KEYBOARD });
         return;

@@ -29,6 +29,12 @@ export function ensureLearnSchema(): void {
       state TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS learn_app_decks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id TEXT NOT NULL,
+      card_ids TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS learn_lessons_cache (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL,
@@ -138,6 +144,23 @@ export function setLearnSession(chatId: string, session: LearnSession): void {
 export function clearLearnSession(chatId: string): void {
   ensureLearnSchema();
   getDb().prepare("DELETE FROM learn_sessions WHERE chat_id = ?").run(chatId);
+}
+
+/** Колода, выданная Mini App через кнопку меню: по id потом разбираем результаты из /start-ссылки. */
+export function createAppDeck(chatId: string, cardIds: number[]): number {
+  ensureLearnSchema();
+  const res = getDb().prepare("INSERT INTO learn_app_decks(chat_id, card_ids, created_at) VALUES (?, ?, ?)").run(chatId, JSON.stringify(cardIds), Date.now());
+  // Старые колоды не нужны — чистим всё старше недели.
+  getDb().prepare("DELETE FROM learn_app_decks WHERE created_at < ?").run(Date.now() - 7 * 86_400_000);
+  return Number(res.lastInsertRowid);
+}
+
+export function getAppDeck(id: number): { chatId: string; cardIds: number[] } | null {
+  ensureLearnSchema();
+  const row = getDb().prepare("SELECT chat_id, card_ids FROM learn_app_decks WHERE id = ?").get(id) as { chat_id: string; card_ids: string } | undefined;
+  if (!row) return null;
+  const ids = safeJson<number[]>(row.card_ids, []);
+  return { chatId: row.chat_id, cardIds: ids };
 }
 
 export function cacheLesson(chatId: string, topicId: string, level: string, lesson: unknown): void {

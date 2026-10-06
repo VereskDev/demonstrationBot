@@ -47,10 +47,35 @@ export async function generateCards(model: ModelTransport, chatId: string, setti
   return { added, duplicates, sample };
 }
 
-/** Колода для Mini App → base64url. Короткие ключи, чтобы влезть в URL кнопки. */
-export function encodeDeck(cards: CardRow[], lang: string): string {
-  const payload = { v: 1, lang, cards: cards.map((c) => ({ i: c.id, f: c.front, b: c.back, x: c.box })) };
+/**
+ * Колода для Mini App → base64url. Короткие ключи, чтобы влезть в URL кнопки.
+ * d — id колоды, u — username бота, m — режим «кнопка меню» (результаты вернутся /start-ссылкой).
+ */
+export function encodeDeck(cards: CardRow[], lang: string, extra: { deckId?: number; bot?: string; menu?: boolean } = {}): string {
+  const payload: Record<string, unknown> = { v: 1, lang, cards: cards.map((c) => ({ i: c.id, f: c.front, b: c.back, x: c.box })) };
+  if (extra.deckId) payload.d = extra.deckId;
+  if (extra.bot) payload.u = extra.bot;
+  if (extra.menu) payload.m = 1;
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+/**
+ * Результаты из /start-ссылки: `cr_<deckId base36>_<answered mask>_<ok mask>`, маски — base64url
+ * битов по порядку карточек колоды. Укладывается в лимит payload (64 символа) даже для 40 карточек.
+ */
+export function parseStartResults(payload: string): { deckId: number; answered: boolean[]; ok: boolean[] } | null {
+  const m = String(payload ?? "").match(/^cr_([0-9a-z]+)_([A-Za-z0-9_-]*)_([A-Za-z0-9_-]*)$/);
+  if (!m) return null;
+  const deckId = parseInt(m[1], 36);
+  if (!Number.isInteger(deckId) || deckId <= 0) return null;
+  const bits = (b64: string): boolean[] => {
+    if (!b64) return [];
+    const buf = Buffer.from(b64, "base64url");
+    const out: boolean[] = [];
+    for (let i = 0; i < buf.length * 8; i++) out.push(Boolean((buf[i >> 3] >> (i & 7)) & 1));
+    return out;
+  };
+  return { deckId, answered: bits(m[2]), ok: bits(m[3]) };
 }
 
 export function decodeDeck(b64: string): { lang: string; cards: Array<{ i: number; f: string; b: string; x: number }> } | null {
