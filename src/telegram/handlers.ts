@@ -256,7 +256,7 @@ async function handleMessage(deps: HandlerDeps, m: IncomingMessage): Promise<voi
       readNote = "PDF передан модели целиком";
     } else readNote = `тип ${mime} не читаю, но файл сохранён и могу переслать`;
     const saved = addNote(chatId, `📎 ${fileName}${text ? `\n${text}` : ""}${extracted ? `\n\n${extracted.slice(0, 4000)}` : ""}`, ["файлы"], { fileId: m.documentFileId, fileName, fileMime: mime });
-    userText = `${text}\n\n[система] Пользователь прислал файл «${fileName}» (${mime}). Он уже сохранён как заметка №${saved.id} — повторно add_note не нужен; переслать его можно через get_note(${saved.id}). Чтение: ${readNote}.${extracted ? `\nСодержимое:\n${extracted}` : ""}`.trim();
+    userText = `${text}\n\n[система] Пользователь прислал файл «${fileName}» (${mime}). Он уже сохранён как заметка №${saved.id} — повторно add_note не нужен; переслать его можно через get_note(${saved.id}). Чтение: ${readNote}.${extracted ? `\nСодержимое${extracted.length > 20_000 ? " (первые 20 000 знаков)" : ""}:\n${extracted.slice(0, 20_000)}` : ""}`.trim();
   }
   if (!userText && !inline.length) return;
 

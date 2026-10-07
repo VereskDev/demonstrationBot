@@ -40,14 +40,32 @@ export function startTunnel(localUrl: string): TunnelHandle {
     const bin = await cloudflaredBin();
     if (!bin) return;
     child = spawn(bin, ["tunnel", "--url", localUrl, "--no-autoupdate"], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    let notFound = 0;
     const onLine = (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       const m = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
       if (m && m[0] !== url) {
         url = m[0];
         restarts = 0;
+        notFound = 0;
         log.info("tunnel", `публичный адрес API: ${url}`);
         for (const cb of listeners) cb(url);
+      }
+      // Quick tunnel после обрыва сети не перерегистрируется («Unauthorized: Tunnel not found»),
+      // cloudflared крутит ретраи вечно. Живой прогон 07.10: 15:49 пропала сеть — адрес умер навсегда.
+      // Три таких ошибки подряд — убиваем процесс, exit-хендлер поднимет новый туннель с новым адресом.
+      if (/Tunnel not found/.test(text)) {
+        notFound += 1;
+        if (notFound >= 3 && child) {
+          log.warn("tunnel", "туннель протух после обрыва сети — перезапускаю cloudflared за новым адресом");
+          notFound = 0;
+          try {
+            child.kill();
+          } catch {
+            /* уже умер */
+          }
+          return;
+        }
       }
       if (/ERR/.test(text) && !/Cannot determine default configuration/.test(text)) log.warn("tunnel", text.trim().split("\n").pop() ?? "");
     };

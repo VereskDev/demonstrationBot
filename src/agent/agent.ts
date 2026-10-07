@@ -34,12 +34,15 @@ export interface AgentTurnResult {
   ms: number;
 }
 
-/** Убрать бинарь из истории, оставив пометку, что он был. */
+/** В историю: без бинарей и без простыней (текст файла на 60 КБ раздувал каждый следующий ход до 17k токенов). */
+const HISTORY_TEXT_MAX = 2_500;
 function stripInline(messages: LlmMessage[]): LlmMessage[] {
   return messages.map((m) => {
-    if (!m.inline?.length) return m;
+    let text = m.text;
+    if (m.role === "user" && text && text.length > HISTORY_TEXT_MAX) text = `${text.slice(0, HISTORY_TEXT_MAX)}\n…[обрезано для истории, полный текст в заметке]`;
+    if (!m.inline?.length) return text === m.text ? m : { ...m, text };
     const kinds = m.inline.map((d) => (d.mimeType.startsWith("image/") ? "фото" : d.mimeType.startsWith("audio/") ? "аудио" : "файл"));
-    return { ...m, inline: undefined, text: `[приложено: ${kinds.join(", ")}] ${m.text ?? ""}`.trim() };
+    return { ...m, inline: undefined, text: `[приложено: ${kinds.join(", ")}] ${text ?? ""}`.trim() };
   });
 }
 
